@@ -27,49 +27,49 @@
 
 **Goal:** Project exists, compiles, can be started, config loads.
 
-### 0.1.0 — Project Scaffolding
-- [ ] Initialize workspace root (Cargo workspace for Rust)
-- [ ] Create directory structure per spec §4
-- [ ] Add `stampd.toml` config file with schema
-- [ ] Implement config parser (TOML → typed structs)
-- [ ] Create `docs/failure-modes.md` (spec §9)
-- [ ] Set up CI basics (cargo check, clippy, test)
+### 0.1.0 — Project Scaffolding ✅
+- [x] Initialize workspace root (Cargo workspace for Rust)
+- [x] Create directory structure per spec §4
+- [x] Add `stampd.toml` config file with schema
+- [x] Implement config parser (TOML → typed structs)
+- [x] Create `docs/failure-modes.md` (spec §9)
+- [x] Set up CI basics (cargo check, clippy, test)
 
-### 0.1.1 — CLI Skeleton
-- [ ] Create `stampd-cli` crate
-- [ ] Implement `stampd up` command (reads config, spawns enabled services)
-- [ ] Implement `stampd status` command
-- [ ] Implement `stampd up --only engine,gateway` filter
-- [ ] Process supervision: spawn, monitor, restart-on-crash with backoff
-- [ ] Log tagging by service name
+### 0.1.1 — CLI Skeleton ✅
+- [x] Create `stampd-cli` crate
+- [x] Implement `stampd up` command (reads config, spawns enabled services)
+- [x] Implement `stampd status` command
+- [x] Implement `stampd up --only engine,gateway` filter
+- [x] Process supervision: spawn, monitor, restart-on-crash with backoff
+- [x] Log tagging by service name
 
-### 0.1.2 — Engine Crate Scaffold
-- [ ] Create `stampd-engine` crate with binary target
-- [ ] Stub `smtpd` module (port 25, accepts connections, logs)
-- [ ] Stub `submissiond` module (port 587, accepts connections, logs)
-- [ ] Stub `maildir` module (create mailbox dirs on startup)
-- [ ] Stub `queue` module (empty delivery queue)
+### 0.1.2 — Engine Crate Scaffold ✅
+- [x] Create `stampd-engine` crate with binary target
+- [x] Stub `smtpd` module (port 25, accepts connections, logs)
+- [x] Stub `submissiond` module (port 587, accepts connections, logs)
+- [x] Stub `maildir` module (create mailbox dirs on startup)
+- [x] Stub `queue` module (empty delivery queue)
 
-### 0.1.3 — Gateway Crate Scaffold
-- [ ] Create `stampd-gateway` package (Node/TS, Fastify)
-- [ ] Health check endpoint: `GET /health`
+### 0.1.3 — Gateway Crate Scaffold ✅
+- [x] Create `stampd-gateway` package (Node/TS, Fastify)
+- [x] Health check endpoint: `GET /health`
 - [ ] Config validation on startup
 - [ ] Structured logging (pino)
 
-### 0.1.4 — Admin Crate Scaffold
-- [ ] Create `stampd-admin` package (Python, FastAPI)
-- [ ] Health check endpoint: `GET /health`
+### 0.1.4 — Admin Crate Scaffold ✅
+- [x] Create `stampd-admin` package (Python, FastAPI)
+- [x] Health check endpoint: `GET /health`
 - [ ] SQLite connection pool setup
 - [ ] Config validation on startup
 
 ### 0.1.5 — Phase 0.1 Validation
-- [ ] `stampd up` starts all enabled services
-- [ ] `stampd status` shows running services + ports
+- [x] `stampd up` starts all enabled services
+- [x] `stampd status` shows running services + ports
 - [ ] Each service responds on `/health`
-- [ ] Config hot-reload not required (restart only)
+- [x] Config hot-reload not required (restart only)
 - [ ] Manual: `curl localhost:8080/health` → 200
 
-**Exit criteria:** CLI can start/stop services, all scaffolds compile and run.
+**Exit criteria:** CLI can start/stop services, all scaffolds compile and run. ✅ Phase 0.1.x complete.
 
 ---
 
