@@ -1,0 +1,122 @@
+---
+import Base from "../layouts/Base.astro";
+import "../styles/global.css";
+---
+
+<Base title="Stampd | Compose">
+  <div class="min-h-screen bg-background">
+    <!-- Top bar -->
+    <header class="h-16 flex items-center justify-between px-6 border-b border-outline-variant bg-surface-container-lowest">
+      <div class="flex items-center gap-4">
+        <a href="/" class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </a>
+        <h1 class="text-headline-sm font-semibold text-on-surface">New Message</h1>
+      </div>
+      <button id="logout-btn" class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+      </button>
+    </header>
+
+    <!-- Compose form -->
+    <div class="max-w-3xl mx-auto p-6">
+      <form id="compose-form" class="space-y-5">
+        <div>
+          <label for="to" class="block text-label-md text-on-surface-variant mb-1.5">To</label>
+          <input
+            id="to"
+            type="email"
+            required
+            placeholder="recipient@example.com"
+            class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-3 text-body-md text-on-surface placeholder:text-on-secondary-container/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
+          />
+        </div>
+
+        <div>
+          <label for="subject" class="block text-label-md text-on-surface-variant mb-1.5">Subject</label>
+          <input
+            id="subject"
+            type="text"
+            placeholder="What's this about?"
+            class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-3 text-body-md text-on-surface placeholder:text-on-secondary-container/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
+          />
+        </div>
+
+        <div>
+          <label for="body" class="block text-label-md text-on-surface-variant mb-1.5">Message</label>
+          <textarea
+            id="body"
+            required
+            rows="16"
+            placeholder="Write your message..."
+            class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-3 text-body-md text-on-surface placeholder:text-on-secondary-container/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-colors resize-y min-h-[300px]"
+          ></textarea>
+        </div>
+
+        <div id="error-msg" class="hidden text-body-sm text-error"></div>
+        <div id="success-msg" class="hidden text-body-sm text-primary"></div>
+
+        <div class="flex gap-4 pt-2">
+          <button
+            type="submit"
+            id="send-btn"
+            class="flex-1 flex items-center justify-center gap-2 bg-primary-container text-on-primary-container py-3 rounded-lg font-bold text-label-md hover:opacity-90 active:scale-[0.98] transition-all"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            Send
+          </button>
+          <a
+            href="/"
+            class="px-6 py-3 border border-outline-variant rounded-lg font-bold text-label-md text-on-surface-variant hover:bg-surface-container transition-colors"
+          >
+            Discard
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    import { sendMessage, logout as apiLogout } from "../lib/api";
+    import { requireAuth, setUser } from "../lib/auth";
+
+    const user = requireAuth();
+
+    const form = document.getElementById("compose-form") as HTMLFormElement;
+    const errorEl = document.getElementById("error-msg")!;
+    const successEl = document.getElementById("success-msg")!;
+    const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorEl.classList.add("hidden");
+      successEl.classList.add("hidden");
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Sending...";
+
+      const to = (document.getElementById("to") as HTMLInputElement).value;
+      const subject = (document.getElementById("subject") as HTMLInputElement).value;
+      const body = (document.getElementById("body") as HTMLTextAreaElement).value;
+
+      try {
+        await sendMessage(to, subject, body);
+        successEl.textContent = "Message queued for delivery";
+        successEl.classList.remove("hidden");
+        form.reset();
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg> Send`;
+      } catch (err: any) {
+        errorEl.textContent = err.message || "Failed to send";
+        errorEl.classList.remove("hidden");
+        sendBtn.disabled = false;
+        sendBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg> Send`;
+      }
+    });
+
+    document.getElementById("logout-btn")?.addEventListener("click", async () => {
+      try { await apiLogout(); } catch {}
+      setUser(null);
+      window.location.href = "/login";
+    });
+  </script>
+</Base>

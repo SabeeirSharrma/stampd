@@ -1,0 +1,95 @@
+---
+import Base from "../layouts/Base.astro";
+import "../styles/global.css";
+---
+
+<Base title="Stampd | Sign Up">
+  <div class="min-h-screen flex items-center justify-center bg-background px-4">
+    <div class="w-full max-w-sm">
+      <!-- Brand -->
+      <div class="text-center mb-10">
+        <h1 class="text-headline-lg font-bold text-primary tracking-tight">Stampd</h1>
+        <p class="text-body-md text-on-secondary-container mt-2">Secure Mail</p>
+      </div>
+
+      <!-- Card -->
+      <div class="bg-surface-container-low border border-outline-variant rounded-xl p-8">
+        <h2 class="text-headline-sm font-semibold text-on-surface mb-6">Create your account</h2>
+
+        <form id="signup-form" class="space-y-5">
+          <div>
+            <label for="email" class="block text-label-md text-on-surface-variant mb-1.5">Email</label>
+            <input
+              id="email"
+              type="email"
+              required
+              autocomplete="email"
+              placeholder="you@domain.com"
+              class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-3 text-body-md text-on-surface placeholder:text-on-secondary-container/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
+            />
+          </div>
+
+          <div>
+            <label for="password" class="block text-label-md text-on-surface-variant mb-1.5">Password</label>
+            <input
+              id="password"
+              type="password"
+              required
+              minlength="8"
+              autocomplete="new-password"
+              placeholder="At least 8 characters"
+              class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-3 text-body-md text-on-surface placeholder:text-on-secondary-container/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
+            />
+          </div>
+
+          <div id="error-msg" class="hidden text-body-sm text-error"></div>
+
+          <button
+            type="submit"
+            id="submit-btn"
+            class="w-full bg-primary-container text-on-primary-container py-3 rounded-lg font-bold text-label-md hover:opacity-90 active:scale-[0.98] transition-all"
+          >
+            Sign Up
+          </button>
+        </form>
+      </div>
+
+      <p class="text-center text-body-sm text-on-secondary-container mt-6">
+        Already have an account?
+        <a href="/login" class="text-primary font-bold hover:underline">Log in</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    import { signup } from "../lib/api";
+    import { setUser, redirectIfAuth } from "../lib/auth";
+
+    redirectIfAuth();
+
+    const form = document.getElementById("signup-form") as HTMLFormElement;
+    const errorEl = document.getElementById("error-msg")!;
+    const submitBtn = document.getElementById("submit-btn") as HTMLButtonElement;
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      errorEl.classList.add("hidden");
+      submitBtn.disabled = true;
+      submitBtn.textContent = "Creating account...";
+
+      const email = (document.getElementById("email") as HTMLInputElement).value;
+      const password = (document.getElementById("password") as HTMLInputElement).value;
+
+      try {
+        const user = await signup(email, password);
+        setUser(user);
+        window.location.href = "/";
+      } catch (err: any) {
+        errorEl.textContent = err.message || "Signup failed";
+        errorEl.classList.remove("hidden");
+        submitBtn.disabled = false;
+        submitBtn.textContent = "Sign Up";
+      }
+    });
+  </script>
+</Base>

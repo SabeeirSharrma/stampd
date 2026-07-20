@@ -1,20 +1,289 @@
 ---
 import Base from "../layouts/Base.astro";
 import Sidebar from "../components/Sidebar.astro";
-import MessageList from "../components/MessageList.astro";
-import ReadingPane from "../components/ReadingPane.astro";
 import AccountDrawer from "../components/AccountDrawer.astro";
 import "../styles/global.css";
 ---
 
-<Base title="Stampd | Secure Mail">
-  <!-- Account Drawer -->
+<Base title="Stampd | Inbox">
   <AccountDrawer />
 
-  <!-- Main Layout Shell -->
   <div class="flex h-screen w-full overflow-hidden">
-    <Sidebar />
-    <MessageList />
-    <ReadingPane />
+    <!-- SIDEBAR -->
+    <aside class="flex flex-col h-screen w-[240px] p-6 bg-surface-container-lowest border-r border-outline-variant z-40">
+      <div class="mb-10">
+        <span class="text-headline-md font-bold text-primary tracking-tight">Stampd</span>
+        <p class="text-label-md text-on-secondary-container mt-1">Secure Mail</p>
+      </div>
+
+      <nav class="flex-1 space-y-1" id="sidebar-nav">
+        <a href="/" class="flex items-center gap-3 px-4 py-2.5 rounded bg-secondary-container text-on-secondary-container font-bold transition-all">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          <span class="text-label-md flex-1">Inbox</span>
+          <span class="font-mono text-mono-sm text-on-secondary-container" id="inbox-count">-</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          <span class="text-label-md">Sent</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
+          <span class="text-label-md">Drafts</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+          <span class="text-label-md">Archive</span>
+        </a>
+        <a href="#" class="flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          <span class="text-label-md">Spam</span>
+        </a>
+      </nav>
+
+      <div class="mt-auto space-y-4">
+        <a href="/compose" class="w-full flex items-center justify-center gap-2 bg-primary-container text-on-primary-container py-4 rounded-xl shadow-lg active:scale-95 transition-all font-bold hover:opacity-90">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          <span class="text-label-md">Compose</span>
+        </a>
+        <div class="pt-4 border-t border-outline-variant space-y-1">
+          <a href="/settings" class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:bg-surface-variant rounded transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/></svg>
+            <span class="text-label-md">Settings</span>
+          </a>
+          <a href="/admin" id="admin-link" class="hidden flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:bg-surface-variant rounded transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+            <span class="text-label-md">Admin</span>
+          </a>
+          <button id="logout-btn" class="w-full flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:bg-surface-variant rounded transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+            <span class="text-label-md">Log out</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MESSAGE LIST -->
+    <main class="flex flex-col h-screen w-[360px] bg-surface-container-low border-r border-outline-variant z-30">
+      <div class="h-16 flex items-center justify-between px-6 border-b border-outline-variant">
+        <h1 class="text-headline-sm font-semibold text-on-surface">Inbox</h1>
+        <div class="flex gap-2">
+          <button class="p-1.5 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M7 12h10"/><path d="M10 18h4"/></svg>
+          </button>
+          <button class="p-1.5 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto custom-scrollbar" id="message-list">
+        <div class="flex items-center justify-center h-full text-on-secondary-container text-body-md" id="loading-state">
+          Loading messages...
+        </div>
+      </div>
+    </main>
+
+    <!-- READING PANE -->
+    <section class="flex-1 flex flex-col h-screen bg-surface" id="reading-pane">
+      <div class="flex-1 flex items-center justify-center text-on-secondary-container text-body-md" id="empty-state">
+        Select a message to read
+      </div>
+    </section>
   </div>
+
+  <script>
+    import { listMessages, getMessage, deleteMessage, getMailboxStats, logout as apiLogout } from "../lib/api";
+    import { getUser, setUser, requireAuth } from "../lib/auth";
+
+    // Auth check
+    const user = requireAuth();
+
+    // Show admin link if admin
+    if (user.is_admin) {
+      document.getElementById("admin-link")?.classList.remove("hidden");
+    }
+
+    // Show user info in drawer
+    const drawerEmail = document.querySelector("#account-drawer .font-mono");
+    if (drawerEmail) drawerEmail.textContent = user.email;
+    const drawerName = document.querySelector("#account-drawer .text-headline-sm");
+    if (drawerName) drawerName.textContent = user.email.split("@")[0];
+
+    // Load stats
+    getMailboxStats().then((stats) => {
+      document.getElementById("inbox-count").textContent = String(stats.total);
+    }).catch(() => {});
+
+    // Load messages
+    let selectedId: string | null = null;
+
+    async function loadMessages() {
+      const listEl = document.getElementById("message-list")!;
+      try {
+        const { messages } = await listMessages();
+        document.getElementById("inbox-count").textContent = String(messages.length);
+
+        if (messages.length === 0) {
+          listEl.innerHTML = `<div class="flex items-center justify-center h-full text-on-secondary-container text-body-md">No messages</div>`;
+          return;
+        }
+
+        listEl.innerHTML = messages.map((msg) => {
+          const initials = msg.from.split("@")[0].slice(0, 2).toUpperCase();
+          const isSelected = msg.id === selectedId;
+          const subject = msg.subject || "(no subject)";
+          const date = new Date(msg.date);
+          const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+          return `
+            <div class="relative group p-6 border-b border-outline-variant cursor-pointer transition-colors ${isSelected ? "bg-surface-container hover:bg-surface-container-high" : "hover:bg-surface-container"}" data-id="${msg.id}">
+              <div class="flex gap-4 mb-2">
+                <div class="w-10 h-10 rounded-full flex items-center justify-center bg-secondary-container text-on-secondary-container font-bold text-xs shrink-0">
+                  ${initials}
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex justify-between items-start">
+                    <p class="truncate font-semibold text-on-surface">${msg.from.split("@")[0]}</p>
+                    <span class="font-mono text-[10px] text-on-secondary-container shrink-0 ml-2">${timeStr}</span>
+                  </div>
+                  <p class="text-body-md truncate text-on-surface-variant">Subject: ${subject}</p>
+                </div>
+              </div>
+              <div class="absolute right-4 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-container-highest p-1 rounded-lg">
+                <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-error delete-btn" data-id="${msg.id}">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                </button>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        // Click handlers
+        listEl.querySelectorAll("[data-id]").forEach((el) => {
+          el.addEventListener("click", (e) => {
+            if ((e.target as HTMLElement).closest(".delete-btn")) return;
+            const id = (el as HTMLElement).dataset.id!;
+            openMessage(id);
+          });
+        });
+
+        // Delete handlers
+        listEl.querySelectorAll(".delete-btn").forEach((btn) => {
+          btn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const id = (btn as HTMLElement).dataset.id!;
+            try {
+              await deleteMessage(id);
+              if (selectedId === id) {
+                selectedId = null;
+                document.getElementById("reading-pane")!.innerHTML = `
+                  <div class="flex-1 flex items-center justify-center text-on-secondary-container text-body-md" id="empty-state">Select a message to read</div>`;
+              }
+              loadMessages();
+            } catch {}
+          });
+        });
+      } catch {
+        listEl.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4 text-on-secondary-container">
+          <p class="text-body-md">Failed to load messages</p>
+          <p class="text-body-sm">Is the gateway running?</p>
+        </div>`;
+      }
+    }
+
+    async function openMessage(id: string) {
+      selectedId = id;
+      const pane = document.getElementById("reading-pane")!;
+      pane.innerHTML = `<div class="flex-1 flex items-center justify-center text-on-secondary-container text-body-md">Loading...</div>`;
+
+      try {
+        const msg = await getMessage(id);
+        const date = new Date(msg.date);
+        const dateStr = date.toLocaleString();
+        const subject = msg.subject || "(no subject)";
+        const bodyHtml = (msg.body || "").replace(/\n/g, "<br>");
+
+        pane.innerHTML = `
+          <header class="h-16 flex items-center justify-between px-6 border-b border-outline-variant bg-surface-container-lowest">
+            <div class="flex items-center gap-4">
+              <button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors" id="pane-back">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
+              <button class="p-2 hover:bg-surface-container rounded-full text-error transition-colors" id="pane-delete">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+              </button>
+            </div>
+            <div class="flex items-center gap-4">
+              <button class="p-0.5 rounded-full border-2 border-primary hover:opacity-80 transition-opacity" onclick="document.getElementById('account-drawer')?.classList.toggle('translate-x-full')">
+                <div class="w-8 h-8 rounded-full bg-primary-container text-on-primary-container flex items-center justify-center text-xs font-bold">
+                  ${user.email.charAt(0).toUpperCase()}
+                </div>
+              </button>
+            </div>
+          </header>
+          <div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-surface">
+            <div class="max-w-3xl mx-auto">
+              <h2 class="text-display-sm font-semibold mb-8 text-on-surface tracking-tight">${subject}</h2>
+              <div class="flex items-center justify-between mb-10">
+                <div class="flex items-center gap-4">
+                  <div class="w-12 h-12 rounded-full flex items-center justify-center bg-primary text-on-primary font-bold text-lg">
+                    ${msg.from.split("@")[0].slice(0, 2).toUpperCase()}
+                  </div>
+                  <div>
+                    <p class="font-bold text-on-surface">
+                      ${msg.from.split("@")[0]}
+                      <span class="font-normal text-on-secondary-container ml-2">&lt;${msg.from}&gt;</span>
+                    </p>
+                    <p class="text-body-sm text-on-secondary-container">to ${msg.to}</p>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <p class="font-mono text-mono-sm text-on-secondary-container">${dateStr}</p>
+                </div>
+              </div>
+              <div class="space-y-6 text-on-surface-variant leading-relaxed text-body-lg">${bodyHtml}</div>
+            </div>
+          </div>
+          <footer class="p-6 border-t border-outline-variant bg-surface-container-lowest">
+            <div class="max-w-3xl mx-auto flex gap-4">
+              <button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3"/><path d="m3 15 4 4 4-4"/><path d="M7 8v8l4-4-4-4z"/></svg>
+                Reply
+              </button>
+              <button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3"/><path d="m14 4 4 4-4 4"/><path d="M17 8V4l4 4-4 4"/></svg>
+                Forward
+              </button>
+            </div>
+          </footer>
+        `;
+
+        document.getElementById("pane-back")?.addEventListener("click", () => {
+          selectedId = null;
+          pane.innerHTML = `<div class="flex-1 flex items-center justify-center text-on-secondary-container text-body-md" id="empty-state">Select a message to read</div>`;
+          loadMessages();
+        });
+
+        document.getElementById("pane-delete")?.addEventListener("click", async () => {
+          try {
+            await deleteMessage(id);
+            selectedId = null;
+            pane.innerHTML = `<div class="flex-1 flex items-center justify-center text-on-secondary-container text-body-md">Select a message to read</div>`;
+            loadMessages();
+          } catch {}
+        });
+      } catch {
+        pane.innerHTML = `<div class="flex-1 flex items-center justify-center text-error text-body-md">Failed to load message</div>`;
+      }
+    }
+
+    // Logout
+    document.getElementById("logout-btn")?.addEventListener("click", async () => {
+      try { await apiLogout(); } catch {}
+      setUser(null);
+      window.location.href = "/login";
+    });
+
+    loadMessages();
+  </script>
 </Base>

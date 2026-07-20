@@ -1,0 +1,135 @@
+---
+import Base from "../layouts/Base.astro";
+import "../styles/global.css";
+---
+
+<Base title="Stampd | Settings">
+  <div class="min-h-screen bg-background">
+    <header class="h-16 flex items-center justify-between px-6 border-b border-outline-variant bg-surface-container-lowest">
+      <div class="flex items-center gap-4">
+        <a href="/" class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </a>
+        <h1 class="text-headline-sm font-semibold text-on-surface">Settings</h1>
+      </div>
+      <button id="logout-btn" class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+      </button>
+    </header>
+
+    <div class="max-w-2xl mx-auto p-6 space-y-8">
+      <!-- Account -->
+      <section>
+        <h2 class="text-headline-sm font-semibold text-on-surface mb-4">Account</h2>
+        <div class="bg-surface-container-low border border-outline-variant rounded-xl p-6 space-y-4">
+          <div>
+            <p class="text-label-md text-on-secondary-container">Email</p>
+            <p class="text-body-md text-on-surface" id="user-email">—</p>
+          </div>
+          <div>
+            <p class="text-label-md text-on-secondary-container">Role</p>
+            <p class="text-body-md text-on-surface" id="user-role">—</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- API Tokens -->
+      <section>
+        <h2 class="text-headline-sm font-semibold text-on-surface mb-4">API Tokens</h2>
+        <div class="bg-surface-container-low border border-outline-variant rounded-xl p-6">
+          <div id="tokens-list" class="space-y-3 mb-4">
+            <p class="text-body-sm text-on-secondary-container">Loading tokens...</p>
+          </div>
+
+          <div class="flex gap-3">
+            <input
+              id="token-label"
+              type="text"
+              placeholder="Token label"
+              class="flex-1 bg-surface-container border border-outline-variant rounded-lg px-4 py-2.5 text-body-md text-on-surface placeholder:text-on-secondary-container/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
+            />
+            <button
+              id="create-token-btn"
+              class="px-4 py-2.5 bg-primary-container text-on-primary-container rounded-lg font-bold text-label-md hover:opacity-90 transition-opacity"
+            >
+              Create
+            </button>
+          </div>
+
+          <div id="new-token-display" class="hidden mt-4 p-4 bg-surface-container rounded-lg border border-outline-variant">
+            <p class="text-label-md text-on-secondary-container mb-1">Your new token (copy it now, it won't be shown again):</p>
+            <code class="block font-mono text-mono-sm text-primary break-all" id="new-token-value"></code>
+          </div>
+        </div>
+      </section>
+
+      <div id="error-msg" class="hidden text-body-sm text-error"></div>
+    </div>
+  </div>
+
+  <script>
+    import { listTokens, createToken, revokeToken, logout as apiLogout } from "../lib/api";
+    import { requireAuth, setUser } from "../lib/auth";
+
+    const user = requireAuth();
+
+    // Populate account info
+    document.getElementById("user-email")!.textContent = user.email;
+    document.getElementById("user-role")!.textContent = user.is_admin ? "Admin" : "User";
+
+    // Load tokens
+    async function loadTokens() {
+      const listEl = document.getElementById("tokens-list")!;
+      try {
+        const tokens = await listTokens();
+        if (tokens.length === 0) {
+          listEl.innerHTML = `<p class="text-body-sm text-on-secondary-container">No tokens yet</p>`;
+          return;
+        }
+        listEl.innerHTML = tokens.map((t) => `
+          <div class="flex items-center justify-between p-3 bg-surface-container rounded-lg border border-outline-variant">
+            <div>
+              <p class="text-body-md text-on-surface font-medium">${t.label}</p>
+              <p class="text-body-sm text-on-secondary-container">${t.scope} &middot; ${new Date(t.created_at * 1000).toLocaleDateString()}</p>
+            </div>
+            <button class="text-error text-body-sm hover:underline revoke-btn" data-id="${t.id}">Revoke</button>
+          </div>
+        `).join("");
+
+        listEl.querySelectorAll(".revoke-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const id = Number((btn as HTMLElement).dataset.id);
+            try {
+              await revokeToken(id);
+              loadTokens();
+            } catch {}
+          });
+        });
+      } catch {
+        listEl.innerHTML = `<p class="text-body-sm text-error">Failed to load tokens</p>`;
+      }
+    }
+
+    // Create token
+    document.getElementById("create-token-btn")?.addEventListener("click", async () => {
+      const label = (document.getElementById("token-label") as HTMLInputElement).value.trim();
+      if (!label) return;
+      try {
+        const result = await createToken(label);
+        document.getElementById("new-token-value")!.textContent = result.token;
+        document.getElementById("new-token-display")!.classList.remove("hidden");
+        (document.getElementById("token-label") as HTMLInputElement).value = "";
+        loadTokens();
+      } catch {}
+    });
+
+    // Logout
+    document.getElementById("logout-btn")?.addEventListener("click", async () => {
+      try { await apiLogout(); } catch {}
+      setUser(null);
+      window.location.href = "/login";
+    });
+
+    loadTokens();
+  </script>
+</Base>
