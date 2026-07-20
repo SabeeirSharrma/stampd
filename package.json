@@ -1,0 +1,16 @@
+{
+  "name": "stampd",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "transit": "^1.0.3",
+    "transit-cli": "^1.0.2"
+  }
+}
