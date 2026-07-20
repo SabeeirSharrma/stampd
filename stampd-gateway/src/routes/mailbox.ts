@@ -47,7 +47,7 @@ async function hashTokenSimple(token: string): Promise<string> {
 export default async function mailboxRoutes(app: FastifyInstance) {
   // ── GET /mailbox/messages ──────────────────────────────────────
   app.get('/mailbox/messages', { preHandler: requireAuth }, async (req) => {
-
+    const user = (req as any).user
     const config = db.getServerConfig()
     const domain = config.domain
     const localPart = user.email.split('@')[0]
