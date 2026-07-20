@@ -1,0 +1,20 @@
+---
+import Base from "../layouts/Base.astro";
+import Sidebar from "../components/Sidebar.astro";
+import MessageList from "../components/MessageList.astro";
+import ReadingPane from "../components/ReadingPane.astro";
+import AccountDrawer from "../components/AccountDrawer.astro";
+import "../styles/global.css";
+---
+
+<Base title="Stampd | Secure Mail">
+  <!-- Account Drawer -->
+  <AccountDrawer />
+
+  <!-- Main Layout Shell -->
+  <div class="flex h-screen w-full overflow-hidden">
+    <Sidebar />
+    <MessageList />
+    <ReadingPane />
+  </div>
+</Base>

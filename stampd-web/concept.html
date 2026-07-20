@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Stampd | Secure Mail</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Geist+Mono:wght@100..900&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "tertiary-fixed": "#dae2fd",
+                    "tertiary-container": "#a9b1ca",
+                    "secondary-fixed-dim": "#bcc7de",
+                    "tertiary": "#c5cce6",
+                    "on-secondary-fixed-variant": "#3c475a",
+                    "inverse-on-surface": "#233143",
+                    "outline": "#87929a",
+                    "inverse-primary": "#00668a",
+                    "tertiary-fixed-dim": "#bec6e0",
+                    "on-tertiary-container": "#3c4459",
+                    "on-error-container": "#ffdad6",
+                    "background": "#051424",
+                    "surface-tint": "#7bd0ff",
+                    "on-secondary-container": "#aeb9d0",
+                    "error-container": "#93000a",
+                    "on-primary": "#00354a",
+                    "error": "#ffb4ab",
+                    "on-tertiary-fixed": "#131b2e",
+                    "surface-variant": "#273647",
+                    "on-surface-variant": "#bdc8d1",
+                    "primary": "#8ed5ff",
+                    "secondary-container": "#3e495d",
+                    "on-primary-fixed": "#001e2c",
+                    "on-error": "#690005",
+                    "on-primary-fixed-variant": "#004c69",
+                    "secondary": "#bcc7de",
+                    "outline-variant": "#3e484f",
+                    "on-surface": "#d4e4fa",
+                    "on-secondary": "#263143",
+                    "surface-dim": "#051424",
+                    "primary-fixed-dim": "#7bd0ff",
+                    "surface-container": "#122131",
+                    "on-background": "#d4e4fa",
+                    "on-tertiary-fixed-variant": "#3f465c",
+                    "surface-container-highest": "#273647",
+                    "secondary-fixed": "#d8e3fb",
+                    "on-secondary-fixed": "#111c2d",
+                    "surface-container-low": "#0d1c2d",
+                    "surface-bright": "#2c3a4c",
+                    "surface-container-lowest": "#010f1f",
+                    "on-tertiary": "#283044",
+                    "surface-container-high": "#1c2b3c",
+                    "on-primary-container": "#004965",
+                    "surface": "#051424",
+                    "primary-container": "#38bdf8",
+                    "inverse-surface": "#d4e4fa",
+                    "primary-fixed": "#c4e7ff"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "list-width": "360px",
+                    "container-padding": "1.5rem",
+                    "stack-sm": "0.5rem",
+                    "sidebar-width": "240px",
+                    "gutter": "24px",
+                    "stack-md": "1rem"
+            },
+            "fontFamily": {
+                    "body-lg": ["Geist"],
+                    "body-sm": ["Geist"],
+                    "body-md": ["Geist"],
+                    "headline-md": ["Geist"],
+                    "label-md": ["Geist"],
+                    "headline-sm": ["Geist"],
+                    "mono-sm": ["Geist Mono"],
+                    "display-sm": ["Geist"]
+            },
+            "fontSize": {
+                    "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                    "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                    "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "label-md": ["14px", {"lineHeight": "1.4", "letterSpacing": "0.01em", "fontWeight": "500"}],
+                    "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                    "mono-sm": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                    "display-sm": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Geist', sans-serif; background-color: #051424; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+        }
+        .unread-indicator {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 3px;
+            background-color: #8ed5ff;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #3e484f; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #87929a; }
+    </style>
+</head>
+<body class="overflow-hidden bg-background text-on-background">
+<!-- Account Drawer -->
+<div class="fixed inset-y-0 right-0 w-80 bg-surface-container-lowest border-l border-outline-variant z-50 transform translate-x-full transition-transform duration-300 ease-in-out shadow-2xl" id="account-drawer">
+<div class="p-container-padding flex flex-col h-full">
+<div class="flex items-center justify-between mb-8">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Identity</h2>
+<button class="p-2 hover:bg-surface-container rounded-full transition-colors text-on-surface" onclick="toggleDrawer()">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div class="flex flex-col items-center mb-8">
+<div class="w-20 h-20 rounded-full border border-outline-variant p-1 mb-4">
+<img class="w-full h-full rounded-full object-cover" data-alt="A professional studio portrait of a technology executive, minimalist aesthetics, high contrast black and white lighting. The background is a clean, architectural office space with soft shadows. The overall mood is cold, reliable, and highly secure, consistent with a high-utility minimalist software brand." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAmoksJDtx1CdBaWu9Xrzz8coNmIO1IBjZkOODh2ecMVsrWKn5Rf8UCEJ1vQrKO3y1SnRbp5Dsgb9-gIIHA81DyYfIh2hFQ0v52OaDyASrKop2eXFuzscSdnVSOasOPRIU0vKQ-EcbJAT9Q5dSzwvnJoAsoMpUd4x5NCIhYRRuRc3u5zsGYpyKfakW8CTcrNE-S3MwhEE81AalfP7zKrqkAqfe_hzuh9MxmiTGq3fdIdFXZyQPG6RYu3LMeg4AMiIr9TaK3C6erIg"/>
+</div>
+<div class="text-center">
+<p class="font-headline-sm text-headline-sm text-on-surface">Alex Thorne</p>
+<p class="font-mono-sm text-mono-sm text-on-secondary-container">thorne.alex@domain.com</p>
+</div>
+</div>
+<nav class="space-y-4">
+<div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant">
+<p class="font-label-md text-label-md text-on-secondary-container mb-1">ENCRYPTION STATUS</p>
+<p class="font-body-md text-body-md flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">verified_user</span>
+                        End-to-End Active
+                    </p>
+</div>
+<button class="w-full text-left px-4 py-3 hover:bg-surface-container rounded transition-colors flex items-center gap-3 text-on-surface">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-body-md text-body-md">Account Settings</span>
+</button>
+<button class="w-full text-left px-4 py-3 hover:bg-surface-container rounded transition-colors flex items-center gap-3 text-on-surface">
+<span class="material-symbols-outlined">key</span>
+<span class="font-body-md text-body-md">Security Keys</span>
+</button>
+<button class="w-full text-left px-4 py-3 hover:bg-surface-container rounded transition-colors flex items-center gap-3 text-error">
+<span class="material-symbols-outlined">logout</span>
+<span class="font-body-md text-body-md">Log out</span>
+</button>
+</nav>
+</div>
+</div>
+<!-- Main Layout Shell -->
+<div class="flex h-screen w-full overflow-hidden">
+<!-- SIDEBAR (Fixed 240px) -->
+<aside class="flex flex-col h-screen w-[240px] p-container-padding bg-surface-container-lowest border-r border-outline-variant z-40">
+<div class="mb-10">
+<span class="font-headline-md text-headline-md font-bold text-primary">Stampd</span>
+<p class="font-label-md text-label-md text-on-secondary-container mt-1">Secure Mail</p>
+</div>
+<nav class="flex-1 space-y-1">
+<!-- Inbox Active -->
+<a class="flex items-center gap-3 px-4 py-2.5 rounded bg-secondary-container text-on-secondary-container font-bold transition-all" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">inbox</span>
+<span class="font-label-md text-label-md">Inbox</span>
+<span class="ml-auto font-mono-sm text-mono-sm">12</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">send</span>
+<span class="font-label-md text-label-md">Sent</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">drafts</span>
+<span class="font-label-md text-label-md">Drafts</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">archive</span>
+<span class="font-label-md text-label-md">Archive</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200" href="#">
+<span class="material-symbols-outlined">report</span>
+<span class="font-label-md text-label-md">Spam</span>
+</a>
+</nav>
+<div class="mt-auto space-y-4">
+<!-- Compose FAB in Sidebar -->
+<button class="w-full flex items-center justify-center gap-2 bg-primary-container text-on-primary-container py-4 rounded-xl shadow-lg active:scale-95 transition-all font-bold">
+<span class="material-symbols-outlined">add</span>
+<span class="font-label-md">Compose</span>
+</button>
+<div class="pt-4 border-t border-outline-variant space-y-1">
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:bg-surface-variant rounded transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-label-md text-label-md">Settings</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:bg-surface-variant rounded transition-colors" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="font-label-md text-label-md">Support</span>
+</a>
+</div>
+</div>
+</aside>
+<!-- MESSAGE LIST (Fixed 360px) -->
+<main class="flex flex-col h-screen w-[360px] bg-surface-container-low border-r border-outline-variant z-30">
+<!-- Header for List -->
+<div class="h-16 flex items-center justify-between px-6 border-b border-outline-variant">
+<h1 class="font-headline-sm text-headline-sm text-on-surface">Inbox</h1>
+<div class="flex gap-2">
+<button class="p-1.5 hover:bg-surface-container rounded-full text-on-surface-variant"><span class="material-symbols-outlined">filter_list</span></button>
+<button class="p-1.5 hover:bg-surface-container rounded-full text-on-surface-variant"><span class="material-symbols-outlined">search</span></button>
+</div>
+</div>
+<!-- Scrollable List -->
+<div class="flex-1 overflow-y-auto custom-scrollbar">
+<!-- Message Item: Selected -->
+<div class="relative group p-6 border-b border-outline-variant bg-surface-container cursor-pointer hover:bg-surface-container-high transition-colors">
+<div class="unread-indicator"></div>
+<div class="flex gap-4 mb-2">
+<div class="w-10 h-10 rounded-full flex items-center justify-center bg-primary text-on-primary font-bold text-xs shrink-0">JD</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<p class="font-bold text-on-surface truncate">Julian Draxler</p>
+<span class="font-mono-sm text-[10px] text-on-secondary-container shrink-0">14:02</span>
+</div>
+<p class="font-body-md text-primary truncate">Subject: Quarterly Security Protocol Update</p>
+</div>
+</div>
+<!-- Hover Actions -->
+<div class="absolute right-4 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-container-highest p-1 rounded-lg">
+<button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">archive</span></button>
+<button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">flag</span></button>
+<button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-error"><span class="material-symbols-outlined text-[20px]">delete</span></button>
+</div>
+</div>
+<!-- Repeatable Message Items -->
+<div class="relative group p-6 border-b border-outline-variant hover:bg-surface-container transition-colors cursor-pointer">
+<div class="flex gap-4 mb-2">
+<div class="w-10 h-10 rounded-full flex items-center justify-center bg-secondary-container text-on-secondary-container font-bold text-xs shrink-0">SC</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<p class="font-bold text-on-surface truncate">Sarah Connor</p>
+<span class="font-mono-sm text-[10px] text-on-secondary-container shrink-0">11:45</span>
+</div>
+<p class="font-body-md text-on-surface-variant truncate">Subject: Deployment Status: System 7</p>
+</div>
+</div>
+<div class="absolute right-4 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-container-highest p-1 rounded-lg">
+<button class="p-1.5 hover:bg-surface-bright rounded text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">archive</span></button>
+<button class="p-1.5 hover:bg-surface-bright rounded text-on-surface-variant"><span class="material-symbols-outlined text-[20px]">flag</span></button>
+<button class="p-1.5 hover:bg-surface-bright rounded text-error"><span class="material-symbols-outlined text-[20px]">delete</span></button>
+</div>
+</div>
+<div class="relative group p-6 border-b border-outline-variant hover:bg-surface-container transition-colors cursor-pointer">
+<div class="flex gap-4 mb-2">
+<div class="w-10 h-10 rounded-full flex items-center justify-center bg-surface-container border border-outline-variant text-primary font-bold text-xs shrink-0">MS</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<p class="font-bold text-on-surface truncate">Marcus Sterling</p>
+<span class="font-mono-sm text-[10px] text-on-secondary-container shrink-0">09:12</span>
+</div>
+<p class="font-body-md text-on-surface-variant truncate">Subject: Contract Draft v4.2</p>
+</div>
+</div>
+</div>
+<div class="relative group p-6 border-b border-outline-variant hover:bg-surface-container transition-colors cursor-pointer">
+<div class="flex gap-4 mb-2">
+<div class="w-10 h-10 rounded-full flex items-center justify-center bg-on-secondary-container text-secondary-fixed font-bold text-xs shrink-0">ET</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-start">
+<p class="font-bold text-on-surface truncate">Evelyn Thorne</p>
+<span class="font-mono-sm text-[10px] text-on-secondary-container shrink-0">Yesterday</span>
+</div>
+<p class="font-body-md text-on-surface-variant truncate">Subject: Re: Weekend Plans</p>
+</div>
+</div>
+</div>
+</div>
+</main>
+<!-- READING PANE (Fluid) -->
+<section class="flex-1 flex flex-col h-screen bg-surface">
+<!-- Reading Pane Header -->
+<header class="h-16 flex items-center justify-between px-gutter border-b border-outline-variant bg-surface-container-lowest">
+<div class="flex items-center gap-4">
+<button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant"><span class="material-symbols-outlined">archive</span></button>
+<button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant"><span class="material-symbols-outlined">report</span></button>
+<button class="p-2 hover:bg-surface-container rounded-full text-error"><span class="material-symbols-outlined">delete</span></button>
+<div class="w-px h-6 bg-outline-variant mx-2"></div>
+<button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant"><span class="material-symbols-outlined">label</span></button>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant"><span class="material-symbols-outlined">chevron_left</span></button>
+<button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant"><span class="material-symbols-outlined">chevron_right</span></button>
+<button class="p-0.5 rounded-full border-2 border-primary hover:opacity-80 transition-opacity" onclick="toggleDrawer()">
+<img class="w-8 h-8 rounded-full" data-alt="A small circular avatar of a modern professional, minimal framing, set against a monochromatic dark navy background. Professionalism and security focused aesthetics." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD5vGOl4QrjifsxmXIbVQ7uxbjL8RD_kdREXVQ6vagp8WcttkjXcaOmu4xoo9YgL-cR5AQgsuAqJs_FLeHS7x3Mstmo7MHBEZHLm2dHGWbjBcaFsq5uL4zmPUWCsdxqg4Cf9oxXMN87tnJpPwilPfeAiq5RsqflVKBln6fxsMaIYF8z7j3YTrsaWpU--bQUgGprZvK2eRsk6NEFDrkXLCW24VpouyT2_KPPJ4paVDc3FpJk4hGLH8c6JyP6CgP0xbYk7DfgsPGR-w"/>
+</button>
+</div>
+</header>
+<!-- Email Content Area -->
+<div class="flex-1 overflow-y-auto custom-scrollbar p-container-padding bg-surface">
+<div class="max-w-3xl mx-auto">
+<h2 class="font-display-sm text-display-sm mb-8 text-on-surface">Quarterly Security Protocol Update</h2>
+<div class="flex items-center justify-between mb-10">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full flex items-center justify-center bg-primary text-on-primary font-bold text-lg">JD</div>
+<div>
+<p class="font-bold text-on-surface">Julian Draxler <span class="font-normal text-on-secondary-container ml-2">&lt;j.draxler@stampd.io&gt;</span></p>
+<p class="font-body-sm text-on-secondary-container">to me</p>
+</div>
+</div>
+<div class="text-right">
+<p class="font-mono-sm text-mono-sm text-on-secondary-container">Oct 14, 2023, 14:02 (2 hours ago)</p>
+<button class="text-primary font-bold text-body-sm mt-1 hover:underline">View Security Signature</button>
+</div>
+</div>
+<div class="space-y-6 text-on-surface-variant leading-relaxed font-body-lg">
+<p>Hi Alex,</p>
+<p>I've completed the preliminary review of our quarterly security audit. Overall, the infrastructure remains highly resilient, but there are a few areas where we need to tighten our rotation policies for the primary salt keys.</p>
+<p>I've highlighted the following critical points:</p>
+<ul class="list-disc pl-6 space-y-3">
+<li class="text-on-surface">Update the master decryption key every 45 days instead of 90.</li>
+<li class="text-on-surface">Enforce hardware-level 2FA for all administrator accounts by EOD Friday.</li>
+<li class="text-on-surface">Review the logs for the Singapore cluster; there was a minor latency spike that needs investigating.</li>
+</ul>
+<p>Please review the attached PDF for the full breakdown of the audit. We should sync tomorrow morning to discuss the implementation timeline for these changes.</p>
+<p>Best regards,<br/>Julian</p>
+</div>
+<!-- Attachment -->
+<div class="mt-12 p-4 border border-outline-variant rounded-xl flex items-center gap-4 hover:bg-surface-container-low transition-colors cursor-pointer group bg-surface-container-lowest">
+<div class="w-12 h-12 bg-surface-container rounded flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">description</span>
+</div>
+<div class="flex-1">
+<p class="font-bold text-body-md text-on-surface">security_audit_q3_final.pdf</p>
+<p class="font-body-sm text-on-secondary-container">4.2 MB</p>
+</div>
+<button class="material-symbols-outlined opacity-0 group-hover:opacity-100 transition-opacity text-on-surface-variant">download</button>
+</div>
+</div>
+</div>
+<!-- Reply Actions Footer -->
+<footer class="p-gutter border-t border-outline-variant bg-surface-container-lowest">
+<div class="max-w-3xl mx-auto flex gap-4">
+<button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary">
+<span class="material-symbols-outlined">reply</span>
+                        Reply
+                    </button>
+<button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary">
+<span class="material-symbols-outlined">forward</span>
+                        Forward
+                    </button>
+</div>
+</footer>
+</section>
+</div>
+<script>
+        function toggleDrawer() {
+            const drawer = document.getElementById('account-drawer');
+            drawer.classList.toggle('translate-x-full');
+        }
+
+        // Close drawer when clicking outside (on the main layout)
+        document.querySelector('main').addEventListener('click', () => {
+            const drawer = document.getElementById('account-drawer');
+            if (!drawer.classList.contains('translate-x-full')) {
+                drawer.classList.add('translate-x-full');
+            }
+        });
+        document.querySelector('aside').addEventListener('click', () => {
+            const drawer = document.getElementById('account-drawer');
+            if (!drawer.classList.contains('translate-x-full')) {
+                drawer.classList.add('translate-x-full');
+            }
+        });
+    </script>
+</body></html>

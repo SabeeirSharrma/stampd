@@ -1,0 +1,125 @@
+---
+import Icon from "./Icon.astro";
+
+interface Message {
+  id: number;
+  initials: string;
+  sender: string;
+  subject: string;
+  time: string;
+  unread: boolean;
+  avatarBg: string;
+  avatarText: string;
+  avatarBorder: boolean;
+}
+
+const messages: Message[] = [
+  {
+    id: 1,
+    initials: "JD",
+    sender: "Julian Draxler",
+    subject: "Quarterly Security Protocol Update",
+    time: "14:02",
+    unread: true,
+    avatarBg: "bg-primary",
+    avatarText: "text-on-primary",
+    avatarBorder: false,
+  },
+  {
+    id: 2,
+    initials: "SC",
+    sender: "Sarah Connor",
+    subject: "Deployment Status: System 7",
+    time: "11:45",
+    unread: false,
+    avatarBg: "bg-secondary-container",
+    avatarText: "text-on-secondary-container",
+    avatarBorder: false,
+  },
+  {
+    id: 3,
+    initials: "MS",
+    sender: "Marcus Sterling",
+    subject: "Contract Draft v4.2",
+    time: "09:12",
+    unread: false,
+    avatarBg: "bg-surface-container",
+    avatarText: "text-primary",
+    avatarBorder: true,
+  },
+  {
+    id: 4,
+    initials: "ET",
+    sender: "Evelyn Thorne",
+    subject: "Re: Weekend Plans",
+    time: "Yesterday",
+    unread: false,
+    avatarBg: "bg-on-secondary-container",
+    avatarText: "text-secondary-fixed",
+    avatarBorder: false,
+  },
+];
+---
+
+<main class="flex flex-col h-screen w-[360px] bg-surface-container-low border-r border-outline-variant z-30">
+  <!-- Header -->
+  <div class="h-16 flex items-center justify-between px-6 border-b border-outline-variant">
+    <h1 class="text-headline-sm font-semibold text-on-surface">Inbox</h1>
+    <div class="flex gap-2">
+      <button class="p-1.5 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+        <Icon name="list-filter" size={20} />
+      </button>
+      <button class="p-1.5 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+        <Icon name="search" size={20} />
+      </button>
+    </div>
+  </div>
+
+  <!-- Scrollable List -->
+  <div class="flex-1 overflow-y-auto custom-scrollbar">
+    {messages.map((msg) => {
+      const itemClass = msg.unread
+        ? "bg-surface-container hover:bg-surface-container-high"
+        : "hover:bg-surface-container";
+      const senderClass = msg.unread ? "font-bold text-on-surface" : "font-semibold text-on-surface";
+      const subjectClass = msg.unread ? "text-primary font-medium" : "text-on-surface-variant";
+      const borderClass = msg.avatarBorder ? "border border-outline-variant" : "";
+
+      return (
+        <div class={`relative group p-6 border-b border-outline-variant cursor-pointer transition-colors ${itemClass}`}>
+          {msg.unread && <div class="unread-indicator" />}
+
+          <div class="flex gap-4 mb-2">
+            <div class={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${msg.avatarBg} ${msg.avatarText} ${borderClass}`}>
+              {msg.initials}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex justify-between items-start">
+                <p class={`truncate ${senderClass}`}>
+                  {msg.sender}
+                </p>
+                <span class="font-mono text-[10px] text-on-secondary-container shrink-0 ml-2">{msg.time}</span>
+              </div>
+              <p class={`text-body-md truncate ${subjectClass}`}>
+                Subject: {msg.subject}
+              </p>
+            </div>
+          </div>
+
+          <!-- Hover Actions -->
+          <div class="absolute right-4 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-container-highest p-1 rounded-lg">
+            <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-on-surface-variant">
+              <Icon name="archive" size={18} />
+            </button>
+            <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-on-surface-variant">
+              <Icon name="flag" size={18} />
+            </button>
+            <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-error">
+              <Icon name="trash" size={18} />
+            </button>
+          </div>
+        </div>
+      );
+    })}
+  </div>
+</main>

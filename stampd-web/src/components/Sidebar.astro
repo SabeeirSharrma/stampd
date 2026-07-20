@@ -1,0 +1,59 @@
+---
+import Icon from "./Icon.astro";
+
+const navItems = [
+  { icon: "inbox", label: "Inbox", count: 12, active: true },
+  { icon: "send", label: "Sent", count: null, active: false },
+  { icon: "file-text", label: "Drafts", count: null, active: false },
+  { icon: "archive", label: "Archive", count: null, active: false },
+  { icon: "shield-alert", label: "Spam", count: null, active: false },
+];
+---
+
+<aside class="flex flex-col h-screen w-[240px] p-6 bg-surface-container-lowest border-r border-outline-variant z-40">
+  <!-- Brand -->
+  <div class="mb-10">
+    <span class="text-headline-md font-bold text-primary tracking-tight">Stampd</span>
+    <p class="text-label-md text-on-secondary-container mt-1">Secure Mail</p>
+  </div>
+
+  <!-- Navigation -->
+  <nav class="flex-1 space-y-1">
+    {navItems.map((item) => (
+      <a
+        href="#"
+        class:list={[
+          "flex items-center gap-3 px-4 py-2.5 rounded transition-all duration-200",
+          item.active
+            ? "bg-secondary-container text-on-secondary-container font-bold"
+            : "text-on-surface-variant hover:bg-surface-variant",
+        ]}
+      >
+        <Icon name={item.icon} size={20} fill={item.active} />
+        <span class="text-label-md flex-1">{item.label}</span>
+        {item.count !== null && (
+          <span class="font-mono text-mono-sm text-on-secondary-container">{item.count}</span>
+        )}
+      </a>
+    ))}
+  </nav>
+
+  <!-- Bottom Actions -->
+  <div class="mt-auto space-y-4">
+    <button class="w-full flex items-center justify-center gap-2 bg-primary-container text-on-primary-container py-4 rounded-xl shadow-lg active:scale-95 transition-all font-bold hover:opacity-90">
+      <Icon name="plus" size={20} />
+      <span class="text-label-md">Compose</span>
+    </button>
+
+    <div class="pt-4 border-t border-outline-variant space-y-1">
+      <a href="#" class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:bg-surface-variant rounded transition-colors">
+        <Icon name="settings" size={20} />
+        <span class="text-label-md">Settings</span>
+      </a>
+      <a href="#" class="flex items-center gap-3 px-4 py-2 text-on-surface-variant hover:bg-surface-variant rounded transition-colors">
+        <Icon name="help-circle" size={20} />
+        <span class="text-label-md">Support</span>
+      </a>
+    </div>
+  </div>
+</aside>

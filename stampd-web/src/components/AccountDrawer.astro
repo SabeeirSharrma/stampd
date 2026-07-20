@@ -1,0 +1,82 @@
+---
+import Icon from "./Icon.astro";
+---
+
+<!-- Account Drawer -->
+<div
+  id="account-drawer"
+  class="fixed inset-y-0 right-0 w-80 bg-surface-container-lowest border-l border-outline-variant z-50 transform translate-x-full transition-transform duration-300 ease-in-out shadow-2xl"
+>
+  <div class="p-6 flex flex-col h-full">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-8">
+      <h2 class="text-headline-sm font-semibold text-on-surface">Identity</h2>
+      <button
+        id="drawer-close"
+        class="p-2 hover:bg-surface-container rounded-full transition-colors text-on-surface"
+      >
+        <Icon name="x" size={20} />
+      </button>
+    </div>
+
+    <!-- Avatar & Info -->
+    <div class="flex flex-col items-center mb-8">
+      <div class="w-20 h-20 rounded-full border border-outline-variant p-1 mb-4">
+        <div class="w-full h-full rounded-full bg-primary-container text-on-primary-container flex items-center justify-center text-2xl font-bold">
+          AT
+        </div>
+      </div>
+      <div class="text-center">
+        <p class="text-headline-sm font-semibold text-on-surface">Alex Thorne</p>
+        <p class="font-mono text-mono-sm text-on-secondary-container">thorne.alex@domain.com</p>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="space-y-4">
+      <!-- Encryption Status Card -->
+      <div class="p-4 bg-surface-container-low rounded-lg border border-outline-variant">
+        <p class="text-label-md text-on-secondary-container mb-1 tracking-wider">ENCRYPTION STATUS</p>
+        <p class="text-body-md flex items-center gap-2 text-on-surface">
+          <Icon name="shield-check" size={20} class="text-primary" fill />
+          End-to-End Active
+        </p>
+      </div>
+
+      <button class="w-full text-left px-4 py-3 hover:bg-surface-container rounded transition-colors flex items-center gap-3 text-on-surface">
+        <Icon name="settings" size={20} />
+        <span class="text-body-md">Account Settings</span>
+      </button>
+      <button class="w-full text-left px-4 py-3 hover:bg-surface-container rounded transition-colors flex items-center gap-3 text-on-surface">
+        <Icon name="key" size={20} />
+        <span class="text-body-md">Security Keys</span>
+      </button>
+      <button class="w-full text-left px-4 py-3 hover:bg-surface-container rounded transition-colors flex items-center gap-3 text-error">
+        <Icon name="logout" size={20} />
+        <span class="text-body-md">Log out</span>
+      </button>
+    </nav>
+  </div>
+</div>
+
+<script>
+  function toggleDrawer() {
+    const drawer = document.getElementById("account-drawer");
+    drawer?.classList.toggle("translate-x-full");
+  }
+
+  function closeDrawer() {
+    const drawer = document.getElementById("account-drawer");
+    drawer?.classList.add("translate-x-full");
+  }
+
+  // Toggle on avatar click
+  document.getElementById("account-toggle")?.addEventListener("click", toggleDrawer);
+
+  // Close on X button
+  document.getElementById("drawer-close")?.addEventListener("click", closeDrawer);
+
+  // Close when clicking main content
+  document.querySelector("main")?.addEventListener("click", closeDrawer);
+  document.querySelector("aside")?.addEventListener("click", closeDrawer);
+</script>
