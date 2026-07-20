@@ -1,4 +1,17 @@
 import { FastifyInstance } from 'fastify'
+import { resolve } from 'node:path'
+
+// Transit imports for cross-language function calls
+const __dirname = import.meta.dirname
+
+// Point Transit at the Rust engine and Python admin directories
+// Transit scans these directories for exported functions
+const { transit } = await import('transit')
+const rs = transit.rust(resolve(__dirname, '../../stampd-engine'))
+const py = transit.python(resolve(__dirname, '../../stampd-admin'))
+
+// Log discovered Transit functions
+transit.info()
 
 async function createApp(): Promise<FastifyInstance> {
   const app = (await import('fastify')).default({
@@ -10,10 +23,45 @@ async function createApp(): Promise<FastifyInstance> {
     return { status: 'ok', service: 'stampd-gateway' }
   })
 
-  // TODO: Add auth middleware
-  // TODO: Add rate limiting
-  // TODO: Add CORS configuration
-  // TODO: Add API endpoints per OpenAPI spec
+  // Engine status via Transit
+  app.get('/api/engine/status', async () => {
+    try {
+      const stats = await rs.getSmtpStats()
+      return JSON.parse(stats)
+    } catch (err) {
+      return { error: 'Engine unavailable' }
+    }
+  })
+
+  // Queue status via Transit
+  app.get('/api/engine/queue', async () => {
+    try {
+      const status = await rs.getQueueStatus()
+      return JSON.parse(status)
+    } catch (err) {
+      return { error: 'Queue unavailable' }
+    }
+  })
+
+  // Admin: list users via Transit
+  app.get('/api/admin/users', async () => {
+    try {
+      const users = await py.getUsers({})
+      return JSON.parse(users)
+    } catch (err) {
+      return { error: 'Admin unavailable' }
+    }
+  })
+
+  // Admin: server config via Transit
+  app.get('/api/admin/config', async () => {
+    try {
+      const config = await py.getServerConfig({})
+      return JSON.parse(config)
+    } catch (err) {
+      return { error: 'Admin unavailable' }
+    }
+  })
 
   return app
 }
