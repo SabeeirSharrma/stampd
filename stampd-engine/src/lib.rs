@@ -11,3 +11,4 @@ pub mod submissiond;
 pub mod maildir;
 pub mod queue;
 pub mod filters;
+pub mod delivery;

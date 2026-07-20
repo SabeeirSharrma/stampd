@@ -7,6 +7,7 @@ mod submissiond;
 mod maildir;
 mod queue;
 mod db;
+mod delivery;
 
 use config::Config;
 use std::sync::Arc;

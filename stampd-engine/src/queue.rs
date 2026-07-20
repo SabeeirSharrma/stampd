@@ -2,6 +2,9 @@ use tracing::{info, warn};
 use std::sync::Arc;
 use std::path::Path;
 use crate::db::Database;
+use crate::delivery;
+
+const MAX_ATTEMPTS: i32 = 5;
 
 pub async fn run(db: Arc<Database>, _maildir_path: String) -> anyhow::Result<()> {
     info!("Queue processor started");
@@ -18,20 +21,43 @@ pub async fn run(db: Arc<Database>, _maildir_path: String) -> anyhow::Result<()>
                     // Check message file exists
                     if !Path::new(message_path).exists() {
                         warn!(id, "Message file missing, marking as failed");
-                        if let Err(e) = db.mark_failed(*id, "Message file missing", 5) {
+                        if let Err(e) = db.mark_failed(*id, "Message file missing", MAX_ATTEMPTS) {
                             warn!(error = ?e, "Failed to mark message as failed");
                         }
                         continue;
                     }
 
-                    // TODO: Phase 0.2.6 — actual MX lookup and SMTP delivery
-                    // For now, mark as delivered (stub)
-                    info!(id, recipient = %recipient, "Delivery stub — marking as delivered");
-                    if let Err(e) = db.mark_delivered(*id) {
-                        warn!(error = ?e, "Failed to mark message as delivered");
-                    }
-                    if let Err(e) = db.log_delivery(*id, "delivered", recipient, None) {
-                        warn!(error = ?e, "Failed to log delivery");
+                    // Read message content
+                    let message = match tokio::fs::read(message_path).await {
+                        Ok(m) => m,
+                        Err(e) => {
+                            warn!(id, error = ?e, "Failed to read message file");
+                            let _ = db.mark_failed(*id, &format!("Read error: {}", e), MAX_ATTEMPTS);
+                            continue;
+                        }
+                    };
+
+                    // Determine sender address from message (From: header)
+                    let from = extract_from_header(&message)
+                        .unwrap_or_else(|| "postmaster@localhost".to_string());
+
+                    // Attempt delivery
+                    match delivery::deliver(&from, recipient, &message).await {
+                        delivery::DeliveryResult::Delivered => {
+                            info!(id, recipient = %recipient, "Message delivered");
+                            let _ = db.mark_delivered(*id);
+                            let _ = db.log_delivery(*id, "delivered", recipient, None);
+                        }
+                        delivery::DeliveryResult::TemporaryFailure(err) => {
+                            warn!(id, recipient = %recipient, error = %err, "Temporary delivery failure");
+                            let _ = db.mark_failed(*id, &err, MAX_ATTEMPTS);
+                            let _ = db.log_delivery(*id, "temp_failed", recipient, Some(&err));
+                        }
+                        delivery::DeliveryResult::PermanentFailure(err) => {
+                            warn!(id, recipient = %recipient, error = %err, "Permanent delivery failure");
+                            let _ = db.mark_failed(*id, &err, MAX_ATTEMPTS);
+                            let _ = db.log_delivery(*id, "bounced", recipient, Some(&err));
+                        }
                     }
                 }
             }
@@ -40,4 +66,22 @@ pub async fn run(db: Arc<Database>, _maildir_path: String) -> anyhow::Result<()>
             }
         }
     }
+}
+
+/// Extract the sender address from the From: header of a message.
+fn extract_from_header(message: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(message);
+    for line in text.lines() {
+        if line.to_lowercase().starts_with("from:") {
+            let addr = line[5..].trim();
+            // Extract email from "Name <email>" format
+            if let Some(start) = addr.find('<') {
+                if let Some(end) = addr.find('>') {
+                    return Some(addr[start + 1..end].to_string());
+                }
+            }
+            return Some(addr.to_string());
+        }
+    }
+    None
 }

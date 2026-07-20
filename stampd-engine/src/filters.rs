@@ -4,7 +4,7 @@
 //! These hooks are invoked at MAIL FROM / RCPT TO / DATA stages.
 
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::info;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FilterResult {
