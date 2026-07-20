@@ -4,6 +4,7 @@ submission_port = 587
 maildir_path = "/var/lib/stampd/mail"
 db_path = "/var/lib/stampd/stampd.db"
 dkim_selector = "default"
+api_port = 8090
 
 [gateway]
 enabled = true

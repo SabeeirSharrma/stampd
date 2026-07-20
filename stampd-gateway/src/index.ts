@@ -1,67 +1,37 @@
-import { FastifyInstance } from 'fastify'
-import { resolve } from 'node:path'
-
-// Transit imports for cross-language function calls
-const __dirname = import.meta.dirname
-
-// Point Transit at the Rust engine and Python admin directories
-// Transit scans these directories for exported functions
-const { transit } = await import('transit')
-const rs = transit.rust(resolve(__dirname, '../../stampd-engine'))
-const py = transit.python(resolve(__dirname, '../../stampd-admin'))
-
-// Log discovered Transit functions
-transit.info()
+import type { FastifyInstance } from 'fastify'
+import authRoutes from './routes/auth.js'
+import mailboxRoutes from './routes/mailbox.js'
+import sendRoutes from './routes/send.js'
+import adminRoutes from './routes/admin.js'
 
 async function createApp(): Promise<FastifyInstance> {
   const app = (await import('fastify')).default({
     logger: true,
   })
 
-  // Health check
+  // ── Plugins ────────────────────────────────────────────────────
+  await app.register((await import('@fastify/cors')).default, {
+    origin: process.env.CORS_ORIGINS?.split(',') || ['*'],
+    credentials: true,
+  })
+
+  await app.register((await import('@fastify/cookie')).default)
+
+  await app.register((await import('@fastify/rate-limit')).default, {
+    max: parseInt(process.env.RATE_LIMIT || '60'),
+    timeWindow: '1 minute',
+  })
+
+  // ── Health ─────────────────────────────────────────────────────
   app.get('/health', async () => {
     return { status: 'ok', service: 'stampd-gateway' }
   })
 
-  // Engine status via Transit
-  app.get('/api/engine/status', async () => {
-    try {
-      const stats = await rs.getSmtpStats()
-      return JSON.parse(stats)
-    } catch (err) {
-      return { error: 'Engine unavailable' }
-    }
-  })
-
-  // Queue status via Transit
-  app.get('/api/engine/queue', async () => {
-    try {
-      const status = await rs.getQueueStatus()
-      return JSON.parse(status)
-    } catch (err) {
-      return { error: 'Queue unavailable' }
-    }
-  })
-
-  // Admin: list users via Transit
-  app.get('/api/admin/users', async () => {
-    try {
-      const users = await py.getUsers({})
-      return JSON.parse(users)
-    } catch (err) {
-      return { error: 'Admin unavailable' }
-    }
-  })
-
-  // Admin: server config via Transit
-  app.get('/api/admin/config', async () => {
-    try {
-      const config = await py.getServerConfig({})
-      return JSON.parse(config)
-    } catch (err) {
-      return { error: 'Admin unavailable' }
-    }
-  })
+  // ── Routes ─────────────────────────────────────────────────────
+  await app.register(authRoutes)
+  await app.register(mailboxRoutes)
+  await app.register(sendRoutes)
+  await app.register(adminRoutes)
 
   return app
 }

@@ -8,6 +8,7 @@ mod maildir;
 mod queue;
 mod db;
 mod delivery;
+mod api;
 
 use config::Config;
 use std::sync::Arc;
@@ -83,6 +84,12 @@ async fn main() -> anyhow::Result<()> {
         config.engine.maildir_path.clone(),
     ));
 
+    // Start internal API server
+    let api_handle = tokio::spawn(api::run(
+        config.engine.api_port,
+        database.clone(),
+    ));
+
     info!("Stampd engine started");
 
     // Wait for any task to complete (or fail)
@@ -106,6 +113,13 @@ async fn main() -> anyhow::Result<()> {
                 Ok(Ok(())) => info!("Queue processor stopped"),
                 Ok(Err(e)) => error!("Queue processor error: {:?}", e),
                 Err(e) => error!("Queue processor panic: {:?}", e),
+            }
+        }
+        result = api_handle => {
+            match result {
+                Ok(Ok(())) => info!("Internal API stopped"),
+                Ok(Err(e)) => error!("Internal API error: {:?}", e),
+                Err(e) => error!("Internal API panic: {:?}", e),
             }
         }
     }

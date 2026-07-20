@@ -22,6 +22,7 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 rusqlite.workspace = true
+axum.workspace = true
 hostname = "0.4"
 napi = { version = "2", features = ["async"] }
 napi-derive = "2"

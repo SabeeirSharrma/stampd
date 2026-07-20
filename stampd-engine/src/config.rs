@@ -16,6 +16,8 @@ pub struct EngineConfig {
     pub domain: String,
     #[serde(default = "default_db_path")]
     pub db_path: String,
+    #[serde(default = "default_api_port")]
+    pub api_port: u16,
 }
 
 fn default_domain() -> String {
@@ -24,6 +26,10 @@ fn default_domain() -> String {
 
 fn default_db_path() -> String {
     "/var/lib/stampd/stampd.db".to_string()
+}
+
+fn default_api_port() -> u16 {
+    8090
 }
 
 impl Config {

@@ -12,3 +12,4 @@ pub mod maildir;
 pub mod queue;
 pub mod filters;
 pub mod delivery;
+pub mod api;
