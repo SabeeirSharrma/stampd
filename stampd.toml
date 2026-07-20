@@ -13,6 +13,10 @@ api_port = 8090
 # DKIM key storage directory
 dkim_key_dir = "/var/lib/stampd/dkim"
 
+# Filter scripts directory
+filters_dir = "/var/lib/stampd/filters"
+filters_timeout_ms = 500
+
 [gateway]
 enabled = true
 port = 8080

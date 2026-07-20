@@ -321,3 +321,50 @@ export function getDeliveryLogsFiltered(filters: { status?: string; recipient?: 
 
   return getDb().query(query).all(...params)
 }
+
+// ── Admin: Filter Management ──────────────────────────────────
+
+export interface FilterRow {
+  id: number
+  name: string
+  path: string
+  hooks: string
+  enabled: boolean
+  created_at: number
+  updated_at: number
+}
+
+export function listFilters(): FilterRow[] {
+  return getDb().query(
+    'SELECT id, name, path, hooks, enabled, created_at, updated_at FROM filters ORDER BY name'
+  ).all() as FilterRow[]
+}
+
+export function getFilter(id: number): FilterRow | undefined {
+  return getDb().query(
+    'SELECT id, name, path, hooks, enabled, created_at, updated_at FROM filters WHERE id = ?'
+  ).get(id) as FilterRow | undefined
+}
+
+export function createFilter(name: string, path: string, hooks: string[]): number {
+  const now = Math.floor(Date.now() / 1000)
+  const result = getDb().run(
+    'INSERT INTO filters (name, path, hooks, enabled, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)',
+    [name, path, JSON.stringify(hooks), now, now]
+  )
+  return Number(result.lastInsertRowid)
+}
+
+export function setFilterEnabled(id: number, enabled: boolean): boolean {
+  const now = Math.floor(Date.now() / 1000)
+  const result = getDb().run(
+    'UPDATE filters SET enabled = ?, updated_at = ? WHERE id = ?',
+    [enabled ? 1 : 0, now, id]
+  )
+  return result.changes > 0
+}
+
+export function deleteFilter(id: number): boolean {
+  const result = getDb().run('DELETE FROM filters WHERE id = ?', [id])
+  return result.changes > 0
+}

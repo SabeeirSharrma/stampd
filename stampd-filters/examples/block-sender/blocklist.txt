@@ -1,0 +1,5 @@
+# Block Sender List
+# Add one email address per line.
+# Lines starting with # are comments.
+spammer@evil.com
+bot@malware.net

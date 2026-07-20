@@ -15,6 +15,7 @@ use std::net::SocketAddr;
 use crate::db::Database;
 use crate::tls::TlsConfig;
 use crate::spf::check_spf;
+use crate::filters::{self, FilterContext, HookPoint};
 
 /// Per-session state during an SMTP transaction.
 struct SmtpSession {
@@ -22,6 +23,8 @@ struct SmtpSession {
     maildir_path: String,
     db: Arc<Database>,
     tls_config: Option<Arc<rustls::ServerConfig>>,
+    filters_dir: std::path::PathBuf,
+    filters_timeout_ms: u64,
     helo_domain: Option<String>,
     mail_from: Option<String>,
     rcpt_to: Vec<String>,
@@ -35,6 +38,8 @@ pub async fn run(
     domain: String,
     db: Arc<Database>,
     tls_config: Option<TlsConfig>,
+    filters_dir: std::path::PathBuf,
+    filters_timeout_ms: u64,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     info!(port, domain = %domain, tls = tls_config.is_some(), "Inbound SMTP server listening");
@@ -49,9 +54,10 @@ pub async fn run(
         let domain = domain.clone();
         let db = db.clone();
         let tls_config = tls_config.clone();
+        let filters_dir = filters_dir.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, addr, maildir_path, domain, db, tls_config).await {
+            if let Err(e) = handle_connection(stream, addr, maildir_path, domain, db, tls_config, filters_dir, filters_timeout_ms).await {
                 error!(addr = %addr, error = ?e, "Connection error");
             }
         });
@@ -65,6 +71,8 @@ async fn handle_connection(
     domain: String,
     db: Arc<Database>,
     tls_config: Option<Arc<rustls::ServerConfig>>,
+    filters_dir: std::path::PathBuf,
+    filters_timeout_ms: u64,
 ) -> anyhow::Result<()> {
     let sender_ip = stream.peer_addr()?.ip();
     let mut line = String::new();
@@ -74,6 +82,8 @@ async fn handle_connection(
         maildir_path,
         db,
         tls_config,
+        filters_dir,
+        filters_timeout_ms,
         helo_domain: None,
         mail_from: None,
         rcpt_to: Vec::new(),
@@ -158,10 +168,29 @@ async fn handle_connection(
             "MAIL" => {
                 match parse_mail_from(&args.unwrap_or_default()) {
                     Ok(sender) => {
-                        session.mail_from = Some(sender.clone());
-                        session.rcpt_to.clear();
-                        info!(addr = %addr, sender = %sender, "MAIL FROM accepted");
-                        "250 OK\r\n".to_string()
+                        // Run mail_from filter hooks
+                        let ctx = FilterContext {
+                            hook: HookPoint::MailFrom,
+                            sender: sender.clone(),
+                            recipient: String::new(),
+                            helo_domain: session.helo_domain.clone().unwrap_or_default(),
+                            client_ip: session.sender_ip.to_string(),
+                            tls: session.tls_active,
+                            headers: None,
+                            body: None,
+                        };
+                        match filters::run_filters(&session.filters_dir, HookPoint::MailFrom, &ctx, session.filters_timeout_ms).await {
+                            Ok(()) => {
+                                session.mail_from = Some(sender.clone());
+                                session.rcpt_to.clear();
+                                info!(addr = %addr, sender = %sender, "MAIL FROM accepted");
+                                "250 OK\r\n".to_string()
+                            }
+                            Err(reason) => {
+                                warn!(addr = %addr, sender = %sender, reason = %reason, "MAIL FROM rejected by filter");
+                                format!("550 {}\r\n", reason)
+                            }
+                        }
                     }
                     Err(e) => {
                         warn!(addr = %addr, error = %e, "MAIL FROM rejected");
@@ -184,9 +213,28 @@ async fn handle_connection(
                             );
                             "550 User not local, please try <forwarding address>\r\n".to_string()
                         } else {
-                            session.rcpt_to.push(recipient_addr.clone());
-                            info!(addr = %addr, recipient = %recipient_addr, "RCPT TO accepted");
-                            "250 OK\r\n".to_string()
+                            // Run rcpt_to filter hooks
+                            let ctx = FilterContext {
+                                hook: HookPoint::RcptTo,
+                                sender: session.mail_from.clone().unwrap_or_default(),
+                                recipient: recipient_addr.clone(),
+                                helo_domain: session.helo_domain.clone().unwrap_or_default(),
+                                client_ip: session.sender_ip.to_string(),
+                                tls: session.tls_active,
+                                headers: None,
+                                body: None,
+                            };
+                            match filters::run_filters(&session.filters_dir, HookPoint::RcptTo, &ctx, session.filters_timeout_ms).await {
+                                Ok(()) => {
+                                    session.rcpt_to.push(recipient_addr.clone());
+                                    info!(addr = %addr, recipient = %recipient_addr, "RCPT TO accepted");
+                                    "250 OK\r\n".to_string()
+                                }
+                                Err(reason) => {
+                                    warn!(addr = %addr, recipient = %recipient_addr, reason = %reason, "RCPT TO rejected by filter");
+                                    format!("550 {}\r\n", reason)
+                                }
+                            }
                         }
                     }
                     Err(e) => {
@@ -214,21 +262,44 @@ async fn handle_connection(
 
                     let message = read_message_body(&mut stream, &mut line).await;
 
-                    match store_message(&session, &message).await {
-                        Ok(count) => {
-                            info!(
-                                addr = %addr,
-                                recipients = count,
-                                size = message.len(),
-                                "Message accepted and stored"
-                            );
-                            session.mail_from = None;
-                            session.rcpt_to.clear();
-                            "250 OK: Message accepted for delivery\r\n".to_string()
-                        }
-                        Err(e) => {
-                            error!(addr = %addr, error = ?e, "Failed to store message");
-                            "451 Local error in processing\r\n".to_string()
+                    // Run data filter hooks (pass full message)
+                    let msg_str = String::from_utf8_lossy(&message).to_string();
+                    let (headers, body) = match msg_str.find("\r\n\r\n") {
+                        Some(pos) => (Some(msg_str[..pos].to_string()), Some(msg_str[pos + 4..].to_string())),
+                        None => (Some(msg_str.clone()), None),
+                    };
+                    let ctx = FilterContext {
+                        hook: HookPoint::Data,
+                        sender: session.mail_from.clone().unwrap_or_default(),
+                        recipient: session.rcpt_to.join(", "),
+                        helo_domain: session.helo_domain.clone().unwrap_or_default(),
+                        client_ip: session.sender_ip.to_string(),
+                        tls: session.tls_active,
+                        headers,
+                        body,
+                    };
+                    if let Err(reason) = filters::run_filters(&session.filters_dir, HookPoint::Data, &ctx, session.filters_timeout_ms).await {
+                        warn!(addr = %addr, reason = %reason, "Message rejected by DATA filter");
+                        session.mail_from = None;
+                        session.rcpt_to.clear();
+                        format!("550 {}\r\n", reason)
+                    } else {
+                        match store_message(&session, &message).await {
+                            Ok(count) => {
+                                info!(
+                                    addr = %addr,
+                                    recipients = count,
+                                    size = message.len(),
+                                    "Message accepted and stored"
+                                );
+                                session.mail_from = None;
+                                session.rcpt_to.clear();
+                                "250 OK: Message accepted for delivery\r\n".to_string()
+                            }
+                            Err(e) => {
+                                error!(addr = %addr, error = ?e, "Failed to store message");
+                                "451 Local error in processing\r\n".to_string()
+                            }
                         }
                     }
                 }
@@ -304,10 +375,29 @@ async fn tls_session(
             "MAIL" => {
                 match parse_mail_from(&args.unwrap_or_default()) {
                     Ok(sender) => {
-                        session.mail_from = Some(sender.clone());
-                        session.rcpt_to.clear();
-                        info!(addr = %addr, sender = %sender, "MAIL FROM accepted (TLS)");
-                        "250 OK\r\n".to_string()
+                        // Run mail_from filter hooks
+                        let ctx = FilterContext {
+                            hook: HookPoint::MailFrom,
+                            sender: sender.clone(),
+                            recipient: String::new(),
+                            helo_domain: session.helo_domain.clone().unwrap_or_default(),
+                            client_ip: session.sender_ip.to_string(),
+                            tls: session.tls_active,
+                            headers: None,
+                            body: None,
+                        };
+                        match filters::run_filters(&session.filters_dir, HookPoint::MailFrom, &ctx, session.filters_timeout_ms).await {
+                            Ok(()) => {
+                                session.mail_from = Some(sender.clone());
+                                session.rcpt_to.clear();
+                                info!(addr = %addr, sender = %sender, "MAIL FROM accepted (TLS)");
+                                "250 OK\r\n".to_string()
+                            }
+                            Err(reason) => {
+                                warn!(addr = %addr, sender = %sender, reason = %reason, "MAIL FROM rejected by filter (TLS)");
+                                format!("550 {}\r\n", reason)
+                            }
+                        }
                     }
                     Err(e) => {
                         warn!(addr = %addr, error = %e, "MAIL FROM rejected");
@@ -330,9 +420,28 @@ async fn tls_session(
                             );
                             "550 User not local, please try <forwarding address>\r\n".to_string()
                         } else {
-                            session.rcpt_to.push(recipient_addr.clone());
-                            info!(addr = %addr, recipient = %recipient_addr, "RCPT TO accepted (TLS)");
-                            "250 OK\r\n".to_string()
+                            // Run rcpt_to filter hooks
+                            let ctx = FilterContext {
+                                hook: HookPoint::RcptTo,
+                                sender: session.mail_from.clone().unwrap_or_default(),
+                                recipient: recipient_addr.clone(),
+                                helo_domain: session.helo_domain.clone().unwrap_or_default(),
+                                client_ip: session.sender_ip.to_string(),
+                                tls: session.tls_active,
+                                headers: None,
+                                body: None,
+                            };
+                            match filters::run_filters(&session.filters_dir, HookPoint::RcptTo, &ctx, session.filters_timeout_ms).await {
+                                Ok(()) => {
+                                    session.rcpt_to.push(recipient_addr.clone());
+                                    info!(addr = %addr, recipient = %recipient_addr, "RCPT TO accepted (TLS)");
+                                    "250 OK\r\n".to_string()
+                                }
+                                Err(reason) => {
+                                    warn!(addr = %addr, recipient = %recipient_addr, reason = %reason, "RCPT TO rejected by filter (TLS)");
+                                    format!("550 {}\r\n", reason)
+                                }
+                            }
                         }
                     }
                     Err(e) => {
@@ -359,21 +468,44 @@ async fn tls_session(
 
                     let message = read_message_body(&mut tls_stream, line).await;
 
-                    match store_message(session, &message).await {
-                        Ok(count) => {
-                            info!(
-                                addr = %addr,
-                                recipients = count,
-                                size = message.len(),
-                                "Message accepted and stored (TLS)"
-                            );
-                            session.mail_from = None;
-                            session.rcpt_to.clear();
-                            "250 OK: Message accepted for delivery\r\n".to_string()
-                        }
-                        Err(e) => {
-                            error!(addr = %addr, error = ?e, "Failed to store message");
-                            "451 Local error in processing\r\n".to_string()
+                    // Run data filter hooks (pass full message)
+                    let msg_str = String::from_utf8_lossy(&message).to_string();
+                    let (headers, body) = match msg_str.find("\r\n\r\n") {
+                        Some(pos) => (Some(msg_str[..pos].to_string()), Some(msg_str[pos + 4..].to_string())),
+                        None => (Some(msg_str.clone()), None),
+                    };
+                    let ctx = FilterContext {
+                        hook: HookPoint::Data,
+                        sender: session.mail_from.clone().unwrap_or_default(),
+                        recipient: session.rcpt_to.join(", "),
+                        helo_domain: session.helo_domain.clone().unwrap_or_default(),
+                        client_ip: session.sender_ip.to_string(),
+                        tls: session.tls_active,
+                        headers,
+                        body,
+                    };
+                    if let Err(reason) = filters::run_filters(&session.filters_dir, HookPoint::Data, &ctx, session.filters_timeout_ms).await {
+                        warn!(addr = %addr, reason = %reason, "Message rejected by DATA filter (TLS)");
+                        session.mail_from = None;
+                        session.rcpt_to.clear();
+                        format!("550 {}\r\n", reason)
+                    } else {
+                        match store_message(session, &message).await {
+                            Ok(count) => {
+                                info!(
+                                    addr = %addr,
+                                    recipients = count,
+                                    size = message.len(),
+                                    "Message accepted and stored (TLS)"
+                                );
+                                session.mail_from = None;
+                                session.rcpt_to.clear();
+                                "250 OK: Message accepted for delivery\r\n".to_string()
+                            }
+                            Err(e) => {
+                                error!(addr = %addr, error = ?e, "Failed to store message");
+                                "451 Local error in processing\r\n".to_string()
+                            }
                         }
                     }
                 }

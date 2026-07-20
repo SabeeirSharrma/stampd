@@ -27,6 +27,12 @@ pub struct EngineConfig {
     /// Directory to store DKIM keys.
     #[serde(default = "default_dkim_key_dir")]
     pub dkim_key_dir: String,
+    /// Directory containing filter scripts.
+    #[serde(default = "default_filters_dir")]
+    pub filters_dir: String,
+    /// Timeout for filter execution in milliseconds.
+    #[serde(default = "default_filters_timeout_ms")]
+    pub filters_timeout_ms: u64,
 }
 
 fn default_domain() -> String {
@@ -43,6 +49,14 @@ fn default_api_port() -> u16 {
 
 fn default_dkim_key_dir() -> String {
     "/var/lib/stampd/dkim".to_string()
+}
+
+fn default_filters_dir() -> String {
+    "/var/lib/stampd/filters".to_string()
+}
+
+fn default_filters_timeout_ms() -> u64 {
+    500
 }
 
 impl Config {

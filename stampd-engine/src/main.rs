@@ -12,6 +12,7 @@ mod api;
 mod tls;
 mod spf;
 mod dkim;
+mod filters;
 
 use config::Config;
 use std::sync::Arc;
@@ -35,10 +36,11 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::load(&config_path)?;
     info!(?config, "Loaded configuration");
 
-    // Ensure parent directory for DB exists
+    // Ensure parent directories for DB and filters exist
     if let Some(parent) = std::path::Path::new(&config.engine.db_path).parent() {
         std::fs::create_dir_all(parent)?;
     }
+    std::fs::create_dir_all(&config.engine.filters_dir)?;
 
     // Initialize database
     let database = Arc::new(db::Database::open(std::path::Path::new(&config.engine.db_path))?);
@@ -86,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    // Start inbound SMTP server (with TLS for STARTTLS)
+    // Start inbound SMTP server (with TLS and filters)
     let smtp_tls = tls_config;
     let smtp_handle = tokio::spawn(smtpd::run(
         config.engine.smtp_port,
@@ -94,6 +96,8 @@ async fn main() -> anyhow::Result<()> {
         config.engine.domain.clone(),
         database.clone(),
         smtp_tls,
+        std::path::PathBuf::from(&config.engine.filters_dir),
+        config.engine.filters_timeout_ms,
     ));
 
     // Start outbound submission server (with DKIM)

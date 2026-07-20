@@ -201,4 +201,73 @@ export default async function adminRoutes(app: FastifyInstance) {
       limit: limit ? parseInt(limit) : 50,
     })
   })
+
+  // ── Filters ────────────────────────────────────────────────────
+
+  // ── GET /admin/filters ─────────────────────────────────────────
+  app.get('/admin/filters', { preHandler: requireAdmin }, async () => {
+    return db.listFilters()
+  })
+
+  // ── GET /admin/filters/:id ─────────────────────────────────────
+  app.get<{ Params: { id: string } }>('/admin/filters/:id', { preHandler: requireAdmin }, async (req, reply) => {
+    const filterId = parseInt(req.params.id)
+    if (isNaN(filterId)) {
+      return reply.status(400).send({ error: 'Invalid filter id' })
+    }
+    const filter = db.getFilter(filterId)
+    if (!filter) {
+      return reply.status(404).send({ error: 'Filter not found' })
+    }
+    return filter
+  })
+
+  // ── POST /admin/filters ────────────────────────────────────────
+  app.post('/admin/filters', { preHandler: requireAdmin }, async (req, reply) => {
+    const { name, path, hooks } = req.body as any
+    if (!name || !path || !hooks) {
+      return reply.status(400).send({ error: 'name, path, and hooks are required' })
+    }
+    if (!Array.isArray(hooks) || hooks.length === 0) {
+      return reply.status(400).send({ error: 'hooks must be a non-empty array (mail_from, rcpt_to, data)' })
+    }
+    const validHooks = ['mail_from', 'rcpt_to', 'data']
+    for (const h of hooks) {
+      if (!validHooks.includes(h)) {
+        return reply.status(400).send({ error: `Invalid hook: ${h}. Must be one of: ${validHooks.join(', ')}` })
+      }
+    }
+    const id = db.createFilter(name, path, hooks)
+    return { ok: true, id, filter: db.getFilter(id) }
+  })
+
+  // ── PATCH /admin/filters/:id ───────────────────────────────────
+  app.patch<{ Params: { id: string } }>('/admin/filters/:id', { preHandler: requireAdmin }, async (req, reply) => {
+    const filterId = parseInt(req.params.id)
+    if (isNaN(filterId)) {
+      return reply.status(400).send({ error: 'Invalid filter id' })
+    }
+    const existing = db.getFilter(filterId)
+    if (!existing) {
+      return reply.status(404).send({ error: 'Filter not found' })
+    }
+    const { enabled } = req.body as any
+    if (enabled !== undefined) {
+      db.setFilterEnabled(filterId, !!enabled)
+    }
+    return { ok: true, filter: db.getFilter(filterId) }
+  })
+
+  // ── DELETE /admin/filters/:id ──────────────────────────────────
+  app.delete<{ Params: { id: string } }>('/admin/filters/:id', { preHandler: requireAdmin }, async (req, reply) => {
+    const filterId = parseInt(req.params.id)
+    if (isNaN(filterId)) {
+      return reply.status(400).send({ error: 'Invalid filter id' })
+    }
+    const deleted = db.deleteFilter(filterId)
+    if (!deleted) {
+      return reply.status(404).send({ error: 'Filter not found' })
+    }
+    return { ok: true }
+  })
 }

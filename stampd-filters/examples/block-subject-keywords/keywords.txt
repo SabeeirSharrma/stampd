@@ -1,0 +1,6 @@
+# Subject Keywords Blocklist
+# Add one keyword per line (substring match, case-insensitive).
+# Lines starting with # are comments.
+buy now
+free money
+click here

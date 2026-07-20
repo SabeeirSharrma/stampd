@@ -501,6 +501,76 @@ impl Database {
         })?;
         rows.collect()
     }
+
+    // ── Filters ───────────────────────────────────────────────────
+
+    /// List all filters.
+    pub fn list_filters(&self) -> SqlResult<Vec<(i64, String, String, String, bool, i64, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, name, path, hooks, enabled, created_at, updated_at FROM filters ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get::<_, i64>(4)? != 0,
+                row.get(5)?,
+                row.get(6)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Get a filter by id.
+    pub fn get_filter(&self, id: i64) -> SqlResult<(i64, String, String, String, bool, i64, i64)> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, name, path, hooks, enabled, created_at, updated_at FROM filters WHERE id = ?1",
+            [id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get::<_, i64>(4)? != 0,
+                    row.get(5)?,
+                    row.get(6)?,
+                ))
+            },
+        )
+    }
+
+    /// Insert a new filter.
+    pub fn create_filter(&self, name: &str, path: &str, hooks: &str) -> SqlResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        let ts = now();
+        conn.execute(
+            "INSERT INTO filters (name, path, hooks, enabled, created_at, updated_at) VALUES (?1, ?2, ?3, 1, ?4, ?4)",
+            rusqlite::params![name, path, hooks, ts],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Update filter enabled state.
+    pub fn set_filter_enabled(&self, id: i64, enabled: bool) -> SqlResult<bool> {
+        let conn = self.conn.lock().unwrap();
+        let rows = conn.execute(
+            "UPDATE filters SET enabled = ?2, updated_at = ?3 WHERE id = ?1",
+            rusqlite::params![id, enabled as i64, now()],
+        )?;
+        Ok(rows > 0)
+    }
+
+    /// Delete a filter.
+    pub fn delete_filter(&self, id: i64) -> SqlResult<bool> {
+        let conn = self.conn.lock().unwrap();
+        let rows = conn.execute("DELETE FROM filters WHERE id = ?1", [id])?;
+        Ok(rows > 0)
+    }
 }
 
 // ── Schema SQL ───────────────────────────────────────────────────
@@ -569,6 +639,16 @@ CREATE TABLE IF NOT EXISTS delivery_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_delivery_logs_created ON delivery_logs(created_at);
+
+CREATE TABLE IF NOT EXISTS filters (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    path TEXT NOT NULL,
+    hooks TEXT NOT NULL DEFAULT '[]',
+    enabled BOOLEAN NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 "#;
 
 // ── Helpers ──────────────────────────────────────────────────────
