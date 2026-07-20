@@ -9,6 +9,9 @@ mod queue;
 mod db;
 mod delivery;
 mod api;
+mod tls;
+mod spf;
+mod dkim;
 
 use config::Config;
 use std::sync::Arc;
@@ -45,9 +48,7 @@ async fn main() -> anyhow::Result<()> {
     match database.get_server_config() {
         Ok(_) => info!("Server config exists"),
         Err(_) => {
-            // First run — seed with the domain from stampd.toml
             let conn = {
-                // We need to insert via the mutex; open a temporary connection
                 let c = rusqlite::Connection::open(&config.engine.db_path)?;
                 c.execute(
                     "INSERT INTO server_config (id, domain, signup_enabled, dkim_selector) VALUES (1, ?1, 1, ?2)",
@@ -63,19 +64,45 @@ async fn main() -> anyhow::Result<()> {
     // Initialize maildir
     maildir::init(&config.engine.maildir_path).await?;
 
-    // Start inbound SMTP server
+    // Load TLS config for STARTTLS
+    let tls_config = tls::try_load(
+        config.engine.tls_cert_path.as_ref().map(std::path::Path::new),
+        config.engine.tls_key_path.as_ref().map(std::path::Path::new),
+    );
+
+    // Initialize DKIM signer
+    let dkim_signer = match dkim::DkimSigner::new(
+        &config.engine.domain,
+        &config.engine.dkim_selector,
+        std::path::Path::new(&config.engine.dkim_key_dir),
+    ) {
+        Ok(signer) => {
+            info!(selector = %config.engine.dkim_selector, "DKIM signer initialized");
+            Some(signer)
+        }
+        Err(e) => {
+            error!(error = ?e, "Failed to initialize DKIM signer — outgoing mail unsigned");
+            None
+        }
+    };
+
+    // Start inbound SMTP server (with TLS for STARTTLS)
+    let smtp_tls = tls_config;
     let smtp_handle = tokio::spawn(smtpd::run(
         config.engine.smtp_port,
         config.engine.maildir_path.clone(),
         config.engine.domain.clone(),
         database.clone(),
+        smtp_tls,
     ));
 
-    // Start outbound submission server
+    // Start outbound submission server (with DKIM)
+    let submission_dkim = dkim_signer.clone();
     let submission_handle = tokio::spawn(submissiond::run(
         config.engine.submission_port,
         config.engine.dkim_selector.clone(),
         database.clone(),
+        submission_dkim,
     ));
 
     // Start queue processor

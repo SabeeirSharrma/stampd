@@ -1,7 +1,7 @@
 //! Outbound submission server (port 587).
 //!
 //! Requires AUTH — tokens or SMTP AUTH PLAIN/LOGIN over TLS.
-//! Signs with DKIM (future) and enqueues for delivery.
+//! Signs with DKIM and enqueues for delivery.
 
 use tokio::net::TcpListener;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -11,6 +11,7 @@ use std::net::SocketAddr;
 use std::path::Path;
 
 use crate::db::Database;
+use crate::dkim::DkimSigner;
 
 /// Per-session state for submission.
 struct SubmissionSession {
@@ -18,6 +19,7 @@ struct SubmissionSession {
     maildir_path: String,
     domain: String,
     dkim_selector: String,
+    dkim_signer: Option<DkimSigner>,
     /// Authenticated user id (None until AUTH succeeds)
     authenticated_user_id: Option<i64>,
     /// Sender from MAIL FROM
@@ -30,9 +32,10 @@ pub async fn run(
     port: u16,
     dkim_selector: String,
     db: Arc<Database>,
+    dkim_signer: Option<DkimSigner>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    info!(port, "Submission server listening");
+    info!(port, dkim = dkim_signer.is_some(), "Submission server listening");
 
     // Get domain from server_config
     let (domain, _, _) = db.get_server_config()
@@ -45,9 +48,10 @@ pub async fn run(
         let db = db.clone();
         let dkim_selector = dkim_selector.clone();
         let domain = domain.clone();
+        let dkim_signer = dkim_signer.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = handle_submission(stream, addr, db, dkim_selector, domain).await {
+            if let Err(e) = handle_submission(stream, addr, db, dkim_selector, domain, dkim_signer).await {
                 error!(addr = %addr, error = ?e, "Submission error");
             }
         });
@@ -60,6 +64,7 @@ async fn handle_submission(
     db: Arc<Database>,
     dkim_selector: String,
     domain: String,
+    dkim_signer: Option<DkimSigner>,
 ) -> anyhow::Result<()> {
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -70,6 +75,7 @@ async fn handle_submission(
         maildir_path: "/var/lib/stampd/mail".to_string(), // TODO: pass from config
         domain: domain.clone(),
         dkim_selector,
+        dkim_signer,
         authenticated_user_id: None,
         mail_from: None,
         rcpt_to: Vec::new(),
@@ -337,6 +343,8 @@ async fn read_message_body(
 // ── Enqueue for Delivery ─────────────────────────────────────────
 
 /// Enqueue the message for delivery to all recipients.
+///
+/// Signs with DKIM before enqueuing if DKIM signer is available.
 async fn enqueue_message(
     session: &SubmissionSession,
     message: &[u8],
@@ -347,6 +355,30 @@ async fn enqueue_message(
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs();
+
+    // Build the full .eml with envelope headers
+    let mut full_message = Vec::new();
+    full_message.extend_from_slice(format!("X-Stampd-From: {}\r\n", session.mail_from.as_deref().unwrap_or("")).as_bytes());
+    full_message.extend_from_slice(format!("X-Stampd-To: {}\r\n", session.rcpt_to.join(", ")).as_bytes());
+    full_message.extend_from_slice(b"\r\n");
+    full_message.extend_from_slice(message);
+
+    // Sign with DKIM if available
+    let signed_message = if let Some(ref signer) = session.dkim_signer {
+        let msg_str = String::from_utf8_lossy(&full_message);
+        match signer.sign_message(&msg_str) {
+            Ok(signed) => {
+                info!("DKIM signing successful");
+                signed.into_bytes()
+            }
+            Err(e) => {
+                warn!(error = ?e, "DKIM signing failed, sending unsigned");
+                full_message
+            }
+        }
+    } else {
+        full_message
+    };
 
     let mut count = 0;
 
@@ -364,14 +396,7 @@ async fn enqueue_message(
             tokio::fs::create_dir_all(parent).await?;
         }
 
-        // Build the full .eml with envelope headers
-        let mut full_message = Vec::new();
-        full_message.extend_from_slice(format!("X-Stampd-From: {}\r\n", session.mail_from.as_deref().unwrap_or("")).as_bytes());
-        full_message.extend_from_slice(format!("X-Stampd-To: {}\r\n", recipient).as_bytes());
-        full_message.extend_from_slice(b"\r\n");
-        full_message.extend_from_slice(message);
-
-        tokio::fs::write(&msg_path, &full_message).await?;
+        tokio::fs::write(&msg_path, &signed_message).await?;
 
         // Enqueue in database
         session.db.enqueue(

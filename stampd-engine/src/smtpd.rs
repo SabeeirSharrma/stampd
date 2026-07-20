@@ -1,30 +1,32 @@
 //! Inbound SMTP server (port 25).
 //!
 //! RFC 5321 command handling: HELO/EHLO, MAIL FROM, RCPT TO, DATA, RSET, QUIT.
+//! STARTTLS (RFC 3207) — plaintext initially, upgrade on STARTTLS command.
 //! No auth required for inbound (standard internet behavior).
 //! Rejects any RCPT TO not addressed to the server's configured domain.
+//! Best-effort SPF check on sender IP.
 
 use tokio::net::TcpListener;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, AsyncRead};
 use tracing::{info, warn, error};
 use std::sync::Arc;
 use std::net::SocketAddr;
 
 use crate::db::Database;
+use crate::tls::TlsConfig;
+use crate::spf::check_spf;
 
 /// Per-session state during an SMTP transaction.
 struct SmtpSession {
     domain: String,
     maildir_path: String,
     db: Arc<Database>,
-    /// Client's claimed domain (from HELO/EHLO)
+    tls_config: Option<Arc<rustls::ServerConfig>>,
     helo_domain: Option<String>,
-    /// Sender from MAIL FROM
     mail_from: Option<String>,
-    /// Accepted recipients from RCPT TO
     rcpt_to: Vec<String>,
-    /// Whether STARTTLS has been negotiated
-    _tls_active: bool,
+    sender_ip: std::net::IpAddr,
+    tls_active: bool,
 }
 
 pub async fn run(
@@ -32,9 +34,12 @@ pub async fn run(
     maildir_path: String,
     domain: String,
     db: Arc<Database>,
+    tls_config: Option<TlsConfig>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    info!(port, domain = %domain, "Inbound SMTP server listening");
+    info!(port, domain = %domain, tls = tls_config.is_some(), "Inbound SMTP server listening");
+
+    let tls_config = tls_config.map(|tc| tc.server_config);
 
     loop {
         let (stream, addr) = listener.accept().await?;
@@ -43,9 +48,10 @@ pub async fn run(
         let maildir_path = maildir_path.clone();
         let domain = domain.clone();
         let db = db.clone();
+        let tls_config = tls_config.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, addr, maildir_path, domain, db).await {
+            if let Err(e) = handle_connection(stream, addr, maildir_path, domain, db, tls_config).await {
                 error!(addr = %addr, error = ?e, "Connection error");
             }
         });
@@ -53,36 +59,41 @@ pub async fn run(
 }
 
 async fn handle_connection(
-    stream: tokio::net::TcpStream,
+    mut stream: tokio::net::TcpStream,
     addr: SocketAddr,
     maildir_path: String,
     domain: String,
     db: Arc<Database>,
+    tls_config: Option<Arc<rustls::ServerConfig>>,
 ) -> anyhow::Result<()> {
-    let (reader, mut writer) = stream.into_split();
-    let mut reader = BufReader::new(reader);
+    let sender_ip = stream.peer_addr()?.ip();
     let mut line = String::new();
 
     let mut session = SmtpSession {
         domain: domain.clone(),
         maildir_path,
         db,
+        tls_config,
         helo_domain: None,
         mail_from: None,
         rcpt_to: Vec::new(),
-        _tls_active: false,
+        sender_ip,
+        tls_active: false,
     };
 
     // Greeting
-    writer
-        .write_all(b"220 Stampd ESMTP ready\r\n")
-        .await?;
+    stream.write_all(b"220 Stampd ESMTP ready\r\n").await?;
 
     loop {
         line.clear();
-        let bytes_read = reader.read_line(&mut line).await?;
+        // Read line from current stream (plain or TLS)
+        let bytes_read = {
+            let mut buf_reader = BufReader::new(&mut stream);
+            buf_reader.read_line(&mut line).await?
+        };
+
         if bytes_read == 0 {
-            break; // Connection closed
+            break;
         }
 
         let cmd_line = line.trim_end_matches("\r\n").to_string();
@@ -90,9 +101,8 @@ async fn handle_connection(
             continue;
         }
 
-        info!(addr = %addr, cmd = %cmd_line, "Inbound SMTP");
+        info!(addr = %addr, cmd = %cmd_line, tls = session.tls_active, "Inbound SMTP");
 
-        // Split into command verb and arguments
         let (verb, args) = match cmd_line.split_once(' ') {
             Some((v, a)) => (v.to_uppercase(), Some(a.to_string())),
             None => (cmd_line.to_uppercase(), None),
@@ -103,23 +113,53 @@ async fn handle_connection(
                 let client_domain = args.unwrap_or_default();
                 session.helo_domain = Some(client_domain.clone());
                 if verb == "EHLO" {
-                    format!(
-                        "250-{}\r\n250-8BITMIME\r\n250-STARTTLS\r\n250 SIZE 52428800\r\n",
-                        domain
-                    )
+                    if session.tls_config.is_some() && !session.tls_active {
+                        format!(
+                            "250-{}\r\n250-8BITMIME\r\n250-STARTTLS\r\n250 SIZE 52428800\r\n",
+                            domain
+                        )
+                    } else {
+                        format!(
+                            "250-{}\r\n250-8BITMIME\r\n250 SIZE 52428800\r\n",
+                            domain
+                        )
+                    }
                 } else {
                     format!("250 {}\r\n", domain)
                 }
             }
             "STARTTLS" => {
-                // TODO: Phase 0.2.3 — implement TLS upgrade
-                "454 TLS not available\r\n".to_string()
+                if session.tls_active {
+                    "503 TLS already active\r\n".to_string()
+                } else if let Some(tls_cfg) = session.tls_config.clone() {
+                    // Acknowledge STARTTLS
+                    stream.write_all(b"220 Ready to start TLS\r\n").await?;
+
+                    // Perform TLS handshake on the raw stream
+                    let tls_acceptor = tokio_rustls::TlsAcceptor::from(tls_cfg);
+                    match tls_acceptor.accept(stream).await {
+                        Ok(tls_stream) => {
+                            info!(addr = %addr, "STARTTLS handshake successful");
+                            session.tls_active = true;
+
+                            // Continue session over TLS
+                            tls_session(tls_stream, &mut session, &mut line, &addr).await?;
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            warn!(addr = %addr, error = ?e, "STARTTLS handshake failed");
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    "454 TLS not available\r\n".to_string()
+                }
             }
             "MAIL" => {
                 match parse_mail_from(&args.unwrap_or_default()) {
                     Ok(sender) => {
                         session.mail_from = Some(sender.clone());
-                        session.rcpt_to.clear(); // RSET-like on new MAIL
+                        session.rcpt_to.clear();
                         info!(addr = %addr, sender = %sender, "MAIL FROM accepted");
                         "250 OK\r\n".to_string()
                     }
@@ -132,7 +172,6 @@ async fn handle_connection(
             "RCPT" => {
                 match parse_rcpt_to(&args.unwrap_or_default()) {
                     Ok(recipient) => {
-                        // Validate domain matches our server
                         let recipient_addr = extract_address(&recipient);
                         let rcpt_domain = extract_domain(&recipient_addr);
                         if rcpt_domain != session.domain {
@@ -160,12 +199,21 @@ async fn handle_connection(
                 if session.mail_from.is_none() || session.rcpt_to.is_empty() {
                     "503 Bad sequence of commands (need MAIL FROM and RCPT TO first)\r\n".to_string()
                 } else {
-                    // Accept DATA and read message body
-                    writer.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
+                    // SPF check
+                    let sender_domain = extract_domain(session.mail_from.as_deref().unwrap_or(""));
+                    let spf_result = check_spf(&sender_domain, session.sender_ip).await;
+                    info!(
+                        addr = %addr,
+                        sender_domain = %sender_domain,
+                        passed = spf_result.passed,
+                        message = %spf_result.message,
+                        "SPF check result"
+                    );
 
-                    let message = read_message_body(&mut reader, &mut line).await;
+                    stream.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
 
-                    // Store in Maildir for each recipient
+                    let message = read_message_body(&mut stream, &mut line).await;
+
                     match store_message(&session, &message).await {
                         Ok(count) => {
                             info!(
@@ -174,7 +222,6 @@ async fn handle_connection(
                                 size = message.len(),
                                 "Message accepted and stored"
                             );
-                            // Reset session for next message
                             session.mail_from = None;
                             session.rcpt_to.clear();
                             "250 OK: Message accepted for delivery\r\n".to_string()
@@ -192,7 +239,7 @@ async fn handle_connection(
                 "250 OK\r\n".to_string()
             }
             "QUIT" => {
-                writer.write_all(b"221 Bye\r\n").await?;
+                stream.write_all(b"221 Bye\r\n").await?;
                 break;
             }
             "NOOP" => {
@@ -204,23 +251,165 @@ async fn handle_connection(
             }
         };
 
-        writer.write_all(response.as_bytes()).await?;
+        stream.write_all(response.as_bytes()).await?;
     }
 
     info!(addr = %addr, "Inbound connection closed");
     Ok(())
 }
 
+/// Handle SMTP session over TLS stream.
+async fn tls_session(
+    mut tls_stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+    session: &mut SmtpSession,
+    line: &mut String,
+    addr: &SocketAddr,
+) -> anyhow::Result<()> {
+    loop {
+        line.clear();
+        let bytes_read = {
+            let mut buf_reader = BufReader::new(&mut tls_stream);
+            buf_reader.read_line(line).await?
+        };
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        let cmd_line = line.trim_end_matches("\r\n").to_string();
+        if cmd_line.is_empty() {
+            continue;
+        }
+
+        info!(addr = %addr, cmd = %cmd_line, tls = true, "Inbound SMTP (TLS)");
+
+        let (verb, args) = match cmd_line.split_once(' ') {
+            Some((v, a)) => (v.to_uppercase(), Some(a.to_string())),
+            None => (cmd_line.to_uppercase(), None),
+        };
+
+        let response = match verb.as_str() {
+            "HELO" | "EHLO" => {
+                let client_domain = args.unwrap_or_default();
+                session.helo_domain = Some(client_domain.clone());
+                if verb == "EHLO" {
+                    format!(
+                        "250-{}\r\n250-8BITMIME\r\n250 SIZE 52428800\r\n",
+                        session.domain
+                    )
+                } else {
+                    format!("250 {}\r\n", session.domain)
+                }
+            }
+            "MAIL" => {
+                match parse_mail_from(&args.unwrap_or_default()) {
+                    Ok(sender) => {
+                        session.mail_from = Some(sender.clone());
+                        session.rcpt_to.clear();
+                        info!(addr = %addr, sender = %sender, "MAIL FROM accepted (TLS)");
+                        "250 OK\r\n".to_string()
+                    }
+                    Err(e) => {
+                        warn!(addr = %addr, error = %e, "MAIL FROM rejected");
+                        format!("501 {}\r\n", e)
+                    }
+                }
+            }
+            "RCPT" => {
+                match parse_rcpt_to(&args.unwrap_or_default()) {
+                    Ok(recipient) => {
+                        let recipient_addr = extract_address(&recipient);
+                        let rcpt_domain = extract_domain(&recipient_addr);
+                        if rcpt_domain != session.domain {
+                            info!(
+                                addr = %addr,
+                                recipient = %recipient_addr,
+                                rcpt_domain = %rcpt_domain,
+                                expected = %session.domain,
+                                "RCPT TO rejected — wrong domain"
+                            );
+                            "550 User not local, please try <forwarding address>\r\n".to_string()
+                        } else {
+                            session.rcpt_to.push(recipient_addr.clone());
+                            info!(addr = %addr, recipient = %recipient_addr, "RCPT TO accepted (TLS)");
+                            "250 OK\r\n".to_string()
+                        }
+                    }
+                    Err(e) => {
+                        warn!(addr = %addr, error = %e, "RCPT TO rejected");
+                        format!("501 {}\r\n", e)
+                    }
+                }
+            }
+            "DATA" => {
+                if session.mail_from.is_none() || session.rcpt_to.is_empty() {
+                    "503 Bad sequence of commands (need MAIL FROM and RCPT TO first)\r\n".to_string()
+                } else {
+                    let sender_domain = extract_domain(session.mail_from.as_deref().unwrap_or(""));
+                    let spf_result = check_spf(&sender_domain, session.sender_ip).await;
+                    info!(
+                        addr = %addr,
+                        sender_domain = %sender_domain,
+                        passed = spf_result.passed,
+                        message = %spf_result.message,
+                        "SPF check result (TLS)"
+                    );
+
+                    tls_stream.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
+
+                    let message = read_message_body(&mut tls_stream, line).await;
+
+                    match store_message(session, &message).await {
+                        Ok(count) => {
+                            info!(
+                                addr = %addr,
+                                recipients = count,
+                                size = message.len(),
+                                "Message accepted and stored (TLS)"
+                            );
+                            session.mail_from = None;
+                            session.rcpt_to.clear();
+                            "250 OK: Message accepted for delivery\r\n".to_string()
+                        }
+                        Err(e) => {
+                            error!(addr = %addr, error = ?e, "Failed to store message");
+                            "451 Local error in processing\r\n".to_string()
+                        }
+                    }
+                }
+            }
+            "RSET" => {
+                session.mail_from = None;
+                session.rcpt_to.clear();
+                "250 OK\r\n".to_string()
+            }
+            "QUIT" => {
+                tls_stream.write_all(b"221 Bye\r\n").await?;
+                break;
+            }
+            "NOOP" => {
+                "250 OK\r\n".to_string()
+            }
+            _ => {
+                warn!(addr = %addr, verb = %verb, "Unknown command");
+                "500 Command not recognized\r\n".to_string()
+            }
+        };
+
+        tls_stream.write_all(response.as_bytes()).await?;
+    }
+
+    info!(addr = %addr, "TLS session closed");
+    Ok(())
+}
+
 // ── Command Parsers ──────────────────────────────────────────────
 
-/// Parse MAIL FROM:<sender> — returns the sender address (or empty for bounce).
 fn parse_mail_from(args: &str) -> Result<String, String> {
     let args = args.trim();
-    // Expected: MAIL FROM:<addr> or MAIL FROM:<> (bounce)
     if let Some(start) = args.find('<') {
         if let Some(end) = args.find('>') {
             let addr = &args[start + 1..end];
-            // Remove any SIZE= parameter that might follow
             let addr = addr.split_whitespace().next().unwrap_or(addr);
             Ok(addr.to_string())
         } else {
@@ -231,7 +420,6 @@ fn parse_mail_from(args: &str) -> Result<String, String> {
     }
 }
 
-/// Parse RCPT TO:<recipient> — returns the full address.
 fn parse_rcpt_to(args: &str) -> Result<String, String> {
     let args = args.trim();
     if let Some(start) = args.find('<') {
@@ -249,7 +437,6 @@ fn parse_rcpt_to(args: &str) -> Result<String, String> {
     }
 }
 
-/// Extract the bare email address from something like "user@domain" or "<user@domain>".
 fn extract_address(input: &str) -> String {
     let s = input.trim();
     if let Some(start) = s.find('<') {
@@ -260,7 +447,6 @@ fn extract_address(input: &str) -> String {
     s.to_string()
 }
 
-/// Extract the domain from an email address.
 fn extract_domain(addr: &str) -> String {
     addr.split('@')
         .nth(1)
@@ -270,30 +456,28 @@ fn extract_domain(addr: &str) -> String {
 
 // ── DATA Body Reading ────────────────────────────────────────────
 
-/// Read the message body until the dot-stuffing terminator (<CRLF>.<CRLF>).
 async fn read_message_body(
-    reader: &mut tokio::io::BufReader<tokio::net::tcp::OwnedReadHalf>,
+    reader: &mut (impl AsyncRead + Unpin),
     line: &mut String,
 ) -> Vec<u8> {
     let mut body = Vec::new();
+    let mut buf_reader = BufReader::new(reader);
 
     loop {
         line.clear();
-        if reader.read_line(line).await.unwrap_or(0) == 0 {
-            break; // Connection closed prematurely
+        if buf_reader.read_line(line).await.unwrap_or(0) == 0 {
+            break;
         }
 
         let raw_line = line.as_bytes();
         let trimmed = line.trim_end_matches("\r\n");
 
-        // Check for the terminating line: "."
         if trimmed == "." {
             break;
         }
 
-        // Handle dot-stuffing: ".." at start of line means a single "."
         if trimmed.starts_with("..") {
-            body.extend_from_slice(&raw_line[1..]); // Remove one leading dot
+            body.extend_from_slice(&raw_line[1..]);
         } else {
             body.extend_from_slice(raw_line);
         }
@@ -304,11 +488,9 @@ async fn read_message_body(
 
 // ── Maildir Storage ──────────────────────────────────────────────
 
-/// Store the message to Maildir for each recipient.
 async fn store_message(session: &SmtpSession, message: &[u8]) -> anyhow::Result<usize> {
     let mut count = 0;
 
-    // Parse the message to extract From/To/Subject for the Maildir filename
     let message_id = format!(
         "{}.{}",
         std::time::SystemTime::now()
@@ -317,23 +499,17 @@ async fn store_message(session: &SmtpSession, message: &[u8]) -> anyhow::Result<
         std::process::id()
     );
 
-    // Build the full .eml content with envelope info
-    let _sender = session.mail_from.as_deref().unwrap_or("");
-
     for recipient in &session.rcpt_to {
         let local_part = recipient.split('@').next().unwrap_or("unknown");
 
-        // Create Maildir path for this user
         let user_dir = std::path::Path::new(&session.maildir_path)
             .join(&session.domain)
             .join(local_part);
 
-        // Ensure directories exist
         tokio::fs::create_dir_all(user_dir.join("cur")).await?;
         tokio::fs::create_dir_all(user_dir.join("new")).await?;
         tokio::fs::create_dir_all(user_dir.join("tmp")).await?;
 
-        // Generate Maildir filename: timestamp.pid.hostname:2,info
         let hostname = hostname::get()
             .map(|h| h.to_string_lossy().to_string())
             .unwrap_or_else(|_| "localhost".to_string());
@@ -345,7 +521,6 @@ async fn store_message(session: &SmtpSession, message: &[u8]) -> anyhow::Result<
 
         let filepath = user_dir.join("new").join(&filename);
 
-        // Write the message
         tokio::fs::write(&filepath, message).await?;
         info!(
             recipient = %recipient,

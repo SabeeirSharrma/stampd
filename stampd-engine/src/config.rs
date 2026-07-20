@@ -18,6 +18,15 @@ pub struct EngineConfig {
     pub db_path: String,
     #[serde(default = "default_api_port")]
     pub api_port: u16,
+    /// TLS certificate path for STARTTLS (optional, generates self-signed if missing).
+    #[serde(default)]
+    pub tls_cert_path: Option<String>,
+    /// TLS private key path for STARTTLS (optional, generates self-signed if missing).
+    #[serde(default)]
+    pub tls_key_path: Option<String>,
+    /// Directory to store DKIM keys.
+    #[serde(default = "default_dkim_key_dir")]
+    pub dkim_key_dir: String,
 }
 
 fn default_domain() -> String {
@@ -30,6 +39,10 @@ fn default_db_path() -> String {
 
 fn default_api_port() -> u16 {
     8090
+}
+
+fn default_dkim_key_dir() -> String {
+    "/var/lib/stampd/dkim".to_string()
 }
 
 impl Config {

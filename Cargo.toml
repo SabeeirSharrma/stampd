@@ -22,3 +22,9 @@ anyhow = "1"
 thiserror = "2"
 rusqlite = { version = "0.31", features = ["bundled"] }
 axum = "0.7"
+tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2"
+trust-dns-resolver = "0.23"
+ring = "0.17"
+base64 = "0.22"

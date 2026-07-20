@@ -26,6 +26,12 @@ axum.workspace = true
 hostname = "0.4"
 napi = { version = "2", features = ["async"] }
 napi-derive = "2"
+tokio-rustls.workspace = true
+rustls.workspace = true
+rustls-pemfile.workspace = true
+trust-dns-resolver.workspace = true
+ring.workspace = true
+base64.workspace = true
 
 [build-dependencies]
 napi-build = "2"

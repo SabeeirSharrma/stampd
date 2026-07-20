@@ -6,6 +6,13 @@ db_path = "/var/lib/stampd/stampd.db"
 dkim_selector = "default"
 api_port = 8090
 
+# TLS for STARTTLS (optional — generates self-signed cert if not set)
+# tls_cert_path = "/etc/stampd/tls/cert.pem"
+# tls_key_path = "/etc/stampd/tls/key.pem"
+
+# DKIM key storage directory
+dkim_key_dir = "/var/lib/stampd/dkim"
+
 [gateway]
 enabled = true
 port = 8080
