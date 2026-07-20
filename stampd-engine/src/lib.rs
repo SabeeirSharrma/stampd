@@ -5,6 +5,7 @@
 
 pub mod transit;
 pub mod config;
+pub mod db;
 pub mod smtpd;
 pub mod submissiond;
 pub mod maildir;

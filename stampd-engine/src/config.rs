@@ -14,10 +14,16 @@ pub struct EngineConfig {
     pub dkim_selector: String,
     #[serde(default = "default_domain")]
     pub domain: String,
+    #[serde(default = "default_db_path")]
+    pub db_path: String,
 }
 
 fn default_domain() -> String {
     "localhost".to_string()
+}
+
+fn default_db_path() -> String {
+    "/var/lib/stampd/stampd.db".to_string()
 }
 
 impl Config {

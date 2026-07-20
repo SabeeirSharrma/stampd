@@ -45,7 +45,7 @@ pub async fn check_rcpt_to(recipient: &str) -> anyhow::Result<FilterResult> {
 }
 
 /// Call filter hook for DATA stage
-pub async fn check_data(headers: &str, body: &str) -> anyhow::Result<FilterResult> {
+pub async fn check_data(_headers: &str, _body: &str) -> anyhow::Result<FilterResult> {
     // TODO: Call Transit Python runtime
     info!("Filter: DATA check (stub)");
     

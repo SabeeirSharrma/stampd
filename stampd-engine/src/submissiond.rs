@@ -1,8 +1,10 @@
 use tokio::net::TcpListener;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tracing::{info, warn, error};
+use std::sync::Arc;
+use crate::db::Database;
 
-pub async fn run(port: u16, _dkim_selector: String) -> anyhow::Result<()> {
+pub async fn run(port: u16, _dkim_selector: String, _db: Arc<Database>) -> anyhow::Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     info!(port, "Submission server listening");
 
