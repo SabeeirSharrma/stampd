@@ -1,0 +1,161 @@
+{
+  "scanner_version": "0.1.0",
+  "files": {
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/maildir.rs": {
+      "mtime": 1784542292,
+      "entries": [
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/maildir.rs",
+          "function_name": "init",
+          "signature": "pub async fn init(maildir_path: &str) -> Result<()>",
+          "export_tier": 1
+        },
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/maildir.rs",
+          "function_name": "create_user_mailbox",
+          "signature": "pub async fn create_user_mailbox(maildir_path: &str, domain: &str, user: &str) -> Result<PathBuf>",
+          "export_tier": 1
+        },
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/maildir.rs",
+          "function_name": "generate_maildir_filename",
+          "signature": "pub fn generate_maildir_filename() -> String",
+          "export_tier": 1
+        },
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/maildir.rs",
+          "function_name": "save_message",
+          "signature": "pub async fn save_message(",
+          "export_tier": 1
+        }
+      ]
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/filters.rs": {
+      "mtime": 1784543403,
+      "entries": [
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/filters.rs",
+          "function_name": "check_mail_from",
+          "signature": "pub async fn check_mail_from(sender: &str) -> anyhow::Result<FilterResult>",
+          "export_tier": 1
+        },
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/filters.rs",
+          "function_name": "check_rcpt_to",
+          "signature": "pub async fn check_rcpt_to(recipient: &str) -> anyhow::Result<FilterResult>",
+          "export_tier": 1
+        },
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/filters.rs",
+          "function_name": "check_data",
+          "signature": "pub async fn check_data(headers: &str, body: &str) -> anyhow::Result<FilterResult>",
+          "export_tier": 1
+        }
+      ]
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/lib.rs": {
+      "mtime": 1784543411,
+      "entries": []
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/build.rs": {
+      "mtime": 1784544263,
+      "entries": []
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/transit.rs": {
+      "mtime": 1784544275,
+      "entries": [
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/transit.rs",
+          "function_name": "get_queue_status",
+          "signature": "pub fn get_queue_status() -> String",
+          "export_tier": 1
+        },
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/transit.rs",
+          "function_name": "get_smtp_stats",
+          "signature": "pub fn get_smtp_stats() -> String",
+          "export_tier": 1
+        },
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/transit.rs",
+          "function_name": "reload_config",
+          "signature": "pub fn reload_config() -> String",
+          "export_tier": 1
+        },
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/transit.rs",
+          "function_name": "check_domain",
+          "signature": "pub fn check_domain(domain: String) -> String",
+          "export_tier": 1
+        }
+      ]
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/smtpd.rs": {
+      "mtime": 1784542498,
+      "entries": [
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/smtpd.rs",
+          "function_name": "run",
+          "signature": "pub async fn run(port: u16, maildir_path: String, domain: String) -> anyhow::Result<()>",
+          "export_tier": 1
+        }
+      ]
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/main.rs": {
+      "mtime": 1784542196,
+      "entries": []
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/submissiond.rs": {
+      "mtime": 1784542501,
+      "entries": [
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/submissiond.rs",
+          "function_name": "run",
+          "signature": "pub async fn run(port: u16, _dkim_selector: String) -> anyhow::Result<()>",
+          "export_tier": 1
+        }
+      ]
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/queue.rs": {
+      "mtime": 1784542303,
+      "entries": [
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/queue.rs",
+          "function_name": "run",
+          "signature": "pub async fn run() -> anyhow::Result<()>",
+          "export_tier": 1
+        }
+      ]
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/config.rs": {
+      "mtime": 1784542202,
+      "entries": [
+        {
+          "language": "rust",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/src/config.rs",
+          "function_name": "load",
+          "signature": "pub fn load(path: &Path) -> anyhow::Result<Self>",
+          "export_tier": 1
+        }
+      ]
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-engine/Cargo.toml": {
+      "mtime": 1784544259,
+      "entries": []
+    }
+  }
+}

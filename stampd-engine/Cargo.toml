@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 description = "Stampd SMTP engine — safety-critical core"
 
+[lib]
+crate-type = ["cdylib", "lib"]
+
 [[bin]]
 name = "stampd-engine"
 path = "src/main.rs"
@@ -19,3 +22,8 @@ tracing-subscriber.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 hostname = "0.4"
+napi = { version = "2", features = ["async"] }
+napi-derive = "2"
+
+[build-dependencies]
+napi-build = "2"

@@ -1,11 +1,14 @@
 //! Transit exports for stampd-engine
 //!
-//! These functions are discovered by Transit's scanner (pub fn = Tier 1).
+//! These functions are exported as napi functions (#[napi]) so Transit's
+//! RustDevBridge can load them as a native addon (.node/.so).
 //! The gateway calls these via transit.rust().
 
+use napi_derive::napi;
 use serde_json::json;
 
 /// Get delivery queue status
+#[napi]
 pub fn get_queue_status() -> String {
     // TODO: Query actual delivery queue
     let status = json!({
@@ -17,6 +20,7 @@ pub fn get_queue_status() -> String {
 }
 
 /// Get SMTP connection stats
+#[napi]
 pub fn get_smtp_stats() -> String {
     // TODO: Query actual SMTP stats
     let stats = json!({
@@ -29,6 +33,7 @@ pub fn get_smtp_stats() -> String {
 }
 
 /// Trigger config reload
+#[napi]
 pub fn reload_config() -> String {
     // TODO: Trigger config reload
     let result = json!({
@@ -39,6 +44,7 @@ pub fn reload_config() -> String {
 }
 
 /// Check if domain is configured
+#[napi]
 pub fn check_domain(domain: String) -> String {
     // TODO: Check if domain is configured
     let result = json!({

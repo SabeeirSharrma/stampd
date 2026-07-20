@@ -6,4 +6,4 @@ pydantic>=2.0.0
 
 # Transit — cross-language interop (https://github.com/SabeeirSharrma/transit)
 # Python runtime is imported from node_modules/transit at runtime.
-# See transit/server.py for the Transit server setup.
+# See transit_service.py for the Transit server setup.

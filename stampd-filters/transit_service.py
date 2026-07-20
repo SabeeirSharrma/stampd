@@ -8,18 +8,7 @@ import json
 import sys
 import os
 
-# Add transit Python runtime to path
-transit_runtime_path = os.path.join(
-    os.path.dirname(__file__),
-    "..",
-    "node_modules",
-    "transit",
-    "packages",
-    "transit-py-runtime"
-)
-if os.path.exists(transit_runtime_path):
-    sys.path.insert(0, transit_runtime_path)
-
+# transit_server.py is co-located in this directory (copied from transit-py-runtime)
 from transit_server import TransitServer, register_function
 
 
