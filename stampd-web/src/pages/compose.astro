@@ -82,6 +82,12 @@ import "../styles/global.css";
 
     const user = requireAuth();
 
+    // Pre-fill from URL params (reply/forward)
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("to")) (document.getElementById("to") as HTMLInputElement).value = params.get("to")!;
+    if (params.get("subject")) (document.getElementById("subject") as HTMLInputElement).value = params.get("subject")!;
+    if (params.get("body")) (document.getElementById("body") as HTMLTextAreaElement).value = params.get("body")!;
+
     const form = document.getElementById("compose-form") as HTMLFormElement;
     const errorEl = document.getElementById("error-msg")!;
     const successEl = document.getElementById("success-msg")!;
