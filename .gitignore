@@ -1,34 +1,45 @@
-# dependencies (bun install)
+# Rust
+/target
+Cargo.lock
+
+# Dependencies (bun install)
 node_modules
 
-# output
+# Output
 out
 dist
 *.tgz
 
-# code coverage
+# Code coverage
 coverage
 *.lcov
 
-# logs
+# Logs
 logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+*.log
 
-# dotenv environment variable files
+# Environment variables
 .env
 .env.development.local
 .env.test.local
 .env.production.local
 .env.local
 
-# caches
+# Caches
 .eslintcache
 .cache
 *.tsbuildinfo
 
-# IntelliJ based IDEs
+# IDEs
 .idea
+.vscode
+*.swp
+*.swo
 
-# Finder (MacOS) folder config
+# OS
 .DS_Store
+Thumbs.db
+
+# Stampd runtime data
+/var/
+/maildir/

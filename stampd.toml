@@ -1,0 +1,26 @@
+[engine]
+smtp_port = 25
+submission_port = 587
+maildir_path = "/var/lib/stampd/mail"
+dkim_selector = "default"
+
+[gateway]
+enabled = true
+port = 8080
+rate_limit_per_min = 60
+cors_origins = ["*"]
+
+[admin]
+enabled = true
+port = 8081            # internal only, not publicly exposed
+signup_enabled = true
+default_quota_mb = 5120
+
+[web]
+enabled = true         # false if only running stampd-web separately,
+                        # or if the operator brings their own UI
+port = 3000
+
+[filters]
+enabled = true
+timeout_ms = 500        # a hanging filter hook must not stall mail delivery

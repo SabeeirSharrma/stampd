@@ -1,13 +1,20 @@
 {
   "name": "stampd",
-  "module": "index.ts",
-  "type": "module",
+  "version": "0.1.0",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+  "workspaces": [
+    "stampd-gateway",
+    "stampd-web"
+  ],
+  "scripts": {
+    "dev:engine": "cargo run -p stampd-engine",
+    "dev:cli": "cargo run -p stampd-cli -- up",
+    "dev:gateway": "bun run --filter stampd-gateway dev",
+    "dev:admin": "cd stampd-admin && uvicorn app.main:app --reload --port 8081",
+    "dev": "cargo run -p stampd-cli -- up",
+    "build": "cargo build --release",
+    "test": "cargo test",
+    "lint": "cargo clippy --all-targets --all-features"
   },
   "dependencies": {
     "transit": "^1.0.3",
