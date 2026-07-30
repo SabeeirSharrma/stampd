@@ -1,360 +1,171 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
-import * as db from '../db.js'
-import { verifyDns, getDnsInstructions } from '../dns-verify.js'
+
+const ADMIN_URL = process.env.ADMIN_URL || 'http://127.0.0.1:8081'
 
 async function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
   const sessionId = req.cookies?.['stampd-session']
   if (sessionId) {
-    const userId = db.validateSession(sessionId)
-    if (userId) {
-      const user = db.getUserById(userId)
-      if (user && !user.disabled_at) {
-        if (!user.is_admin) {
-          return reply.status(403).send({ error: 'Admin access required' })
-        }
-        const { id: _, ...userData } = user
-        ;(req as any).user = { id: userId, ...userData }
-        return
-      }
-    }
+    // Validate session via admin service
+    // For now, pass session ID as header
+    ;(req as any).headers['x-stampd-session'] = sessionId
+    return
   }
 
   const authHeader = req.headers.authorization
   if (authHeader?.startsWith('Bearer ')) {
-    const rawToken = authHeader.slice(7)
-    const tokenHash = await hashTokenSimple(rawToken)
-    const tokenRow = db.validateToken(tokenHash)
-    if (tokenRow) {
-      const user = db.getUserById(tokenRow.user_id)
-      if (user && !user.disabled_at) {
-        if (!user.is_admin) {
-          return reply.status(403).send({ error: 'Admin access required' })
-        }
-        const { id: _, ...userData } = user
-        ;(req as any).user = { id: tokenRow.user_id, ...userData, tokenScope: 'send' }
-        return
-      }
-    }
+    ;(req as any).headers['x-stampd-token'] = authHeader.slice(7)
+    return
   }
 
   return reply.status(401).send({ error: 'Authentication required' })
 }
 
-async function hashTokenSimple(token: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(token)
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
+async function proxyToAdmin(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  method: string,
+  path: string,
+  body?: any,
+) {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    }
+    if ((req as any).headers['x-stampd-session']) {
+      headers['x-stampd-session'] = (req as any).headers['x-stampd-session']
+    }
+    if ((req as any).headers['x-stampd-token']) {
+      headers['x-stampd-token'] = (req as any).headers['x-stampd-token']
+    }
+
+    const response = await fetch(`${ADMIN_URL}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    })
+
+    const data = await response.json()
+    return reply.status(response.status).send(data)
+  } catch (err) {
+    return reply.status(502).send({ error: 'Admin service unavailable' })
+  }
 }
 
 export default async function adminRoutes(app: FastifyInstance) {
-  // ── GET /admin/users ───────────────────────────────────────────
-  app.get('/admin/users', { preHandler: requireAdmin }, async () => {
-    return db.listUsers()
+  // ── User routes ────────────────────────────────────────────────
+
+  app.get('/admin/users', { preHandler: requireAdmin }, async (req, reply) => {
+    return proxyToAdmin(req, reply, 'GET', '/admin/users')
   })
 
-  // ── PATCH /admin/users/:id/disable ─────────────────────────────
   app.patch<{ Params: { id: string } }>('/admin/users/:id/disable', { preHandler: requireAdmin }, async (req, reply) => {
-    const user = (req as any).user
-    const targetId = parseInt(req.params.id)
-    if (isNaN(targetId)) {
-      return reply.status(400).send({ error: 'Invalid user id' })
-    }
-    if (targetId === user.id) {
-      return reply.status(400).send({ error: 'Cannot disable yourself' })
-    }
-    const target = db.getUserById(targetId)
-    if (!target) {
-      return reply.status(404).send({ error: 'User not found' })
-    }
-    if (target.disabled_at) {
-      return reply.status(400).send({ error: 'User already disabled' })
-    }
-    const success = db.disableUser(targetId)
-    return { ok: success }
+    return proxyToAdmin(req, reply, 'PATCH', `/admin/users/${req.params.id}/disable`)
   })
 
-  // ── DELETE /admin/users/:id ────────────────────────────────────
   app.delete<{ Params: { id: string } }>('/admin/users/:id', { preHandler: requireAdmin }, async (req, reply) => {
-    const user = (req as any).user
-    const targetId = parseInt(req.params.id)
-    if (isNaN(targetId)) {
-      return reply.status(400).send({ error: 'Invalid user id' })
-    }
-    if (targetId === user.id) {
-      return reply.status(400).send({ error: 'Cannot delete yourself' })
-    }
-    const target = db.getUserById(targetId)
-    if (!target) {
-      return reply.status(404).send({ error: 'User not found' })
-    }
-    // Revoke all user tokens first
-    const tokens = db.getUserTokens(targetId) as any[]
-    for (const token of tokens) {
-      if (!token.revoked) {
-        db.revokeToken(token.id)
-      }
-    }
-    const success = db.deleteUser(targetId)
-    return { ok: success }
+    return proxyToAdmin(req, reply, 'DELETE', `/admin/users/${req.params.id}`)
   })
 
-  // ── GET /admin/users/:id/tokens ────────────────────────────────
   app.get<{ Params: { id: string } }>('/admin/users/:id/tokens', { preHandler: requireAdmin }, async (req, reply) => {
-    const targetId = parseInt(req.params.id)
-    if (isNaN(targetId)) {
-      return reply.status(400).send({ error: 'Invalid user id' })
-    }
-    const target = db.getUserById(targetId)
-    if (!target) {
-      return reply.status(404).send({ error: 'User not found' })
-    }
-    return db.getUserTokens(targetId)
+    return proxyToAdmin(req, reply, 'GET', `/admin/users/${req.params.id}/tokens`)
   })
 
-  // ── GET /admin/tokens ──────────────────────────────────────────
-  app.get('/admin/tokens', { preHandler: requireAdmin }, async () => {
-    return db.listAllTokens()
+  // ── Token routes ───────────────────────────────────────────────
+
+  app.get('/admin/tokens', { preHandler: requireAdmin }, async (req, reply) => {
+    return proxyToAdmin(req, reply, 'GET', '/admin/tokens')
   })
 
-  // ── GET /admin/tokens/stats ────────────────────────────────────
-  app.get('/admin/tokens/stats', { preHandler: requireAdmin }, async () => {
-    return db.getTokenStats()
+  app.get('/admin/tokens/stats', { preHandler: requireAdmin }, async (req, reply) => {
+    return proxyToAdmin(req, reply, 'GET', '/admin/tokens/stats')
   })
 
-  // ── DELETE /admin/tokens/:id ───────────────────────────────────
   app.delete<{ Params: { id: string } }>('/admin/tokens/:id', { preHandler: requireAdmin }, async (req, reply) => {
-    const tokenId = parseInt(req.params.id)
-    if (isNaN(tokenId)) {
-      return reply.status(400).send({ error: 'Invalid token id' })
-    }
-    const revoked = db.revokeToken(tokenId)
-    if (!revoked) {
-      return reply.status(404).send({ error: 'Token not found or already revoked' })
-    }
-    return { ok: true }
+    return proxyToAdmin(req, reply, 'DELETE', `/admin/tokens/${req.params.id}`)
   })
 
-  // ── GET /admin/config ──────────────────────────────────────────
-  app.get('/admin/config', { preHandler: requireAdmin }, async () => {
-    return db.getServerConfig()
+  // ── Config routes ──────────────────────────────────────────────
+
+  app.get('/admin/config', { preHandler: requireAdmin }, async (req, reply) => {
+    return proxyToAdmin(req, reply, 'GET', '/admin/config')
   })
 
-  // ── PATCH /admin/config ────────────────────────────────────────
-  app.patch('/admin/config', { preHandler: requireAdmin }, async (req) => {
-    const body = req.body as any
-    const updates: any = {}
-    if (body.domain !== undefined) updates.domain = body.domain
-    if (body.signup_enabled !== undefined) updates.signup_enabled = body.signup_enabled
-    if (body.dkim_selector !== undefined) updates.dkim_selector = body.dkim_selector
-
-    if (Object.keys(updates).length === 0) {
-      return { ok: false, error: 'No fields to update' }
-    }
-
-    const success = db.updateServerConfig(updates)
-    return { ok: success, config: db.getServerConfig() }
+  app.patch('/admin/config', { preHandler: requireAdmin }, async (req, reply) => {
+    return proxyToAdmin(req, reply, 'PATCH', '/admin/config', req.body)
   })
 
-  // ── GET /admin/quota ───────────────────────────────────────────
-  app.get('/admin/quota', { preHandler: requireAdmin }, async () => {
-    return db.getQuotaUsage()
+  // ── Queue routes ───────────────────────────────────────────────
+
+  app.get('/admin/queue', { preHandler: requireAdmin }, async (req, reply) => {
+    const status = (req.query as any)?.status
+    const query = status ? `?status=${status}` : ''
+    return proxyToAdmin(req, reply, 'GET', `/admin/queue${query}`)
   })
 
-  // ── GET /admin/queue ───────────────────────────────────────────
-  app.get('/admin/queue', { preHandler: requireAdmin }, async (req) => {
-    const status = (req.query as any)?.status as string | undefined
-    return db.listQueueMessages(status)
-  })
-
-  // ── POST /admin/queue/:id/retry ────────────────────────────────
   app.post<{ Params: { id: string } }>('/admin/queue/:id/retry', { preHandler: requireAdmin }, async (req, reply) => {
-    const msgId = parseInt(req.params.id)
-    if (isNaN(msgId)) {
-      return reply.status(400).send({ error: 'Invalid message id' })
-    }
-    const retried = db.retryMessage(msgId)
-    if (!retried) {
-      return reply.status(404).send({ error: 'Message not found or not dead-lettered' })
-    }
-    return { ok: true }
+    return proxyToAdmin(req, reply, 'POST', `/admin/queue/${req.params.id}/retry`)
   })
 
-  // ── DELETE /admin/queue/:id ────────────────────────────────────
   app.delete<{ Params: { id: string } }>('/admin/queue/:id', { preHandler: requireAdmin }, async (req, reply) => {
-    const msgId = parseInt(req.params.id)
-    if (isNaN(msgId)) {
-      return reply.status(400).send({ error: 'Invalid message id' })
-    }
-    const purged = db.purgeMessage(msgId)
-    if (!purged) {
-      return reply.status(404).send({ error: 'Message not found' })
-    }
-    return { ok: true }
+    return proxyToAdmin(req, reply, 'DELETE', `/admin/queue/${req.params.id}`)
   })
 
-  // ── GET /admin/logs ────────────────────────────────────────────
-  app.get('/admin/logs', { preHandler: requireAdmin }, async (req) => {
+  // ── Log routes ─────────────────────────────────────────────────
+
+  app.get('/admin/logs', { preHandler: requireAdmin }, async (req, reply) => {
     const { status, recipient, limit } = req.query as any
-    return db.getDeliveryLogsFiltered({
-      status: status || undefined,
-      recipient: recipient || undefined,
-      limit: limit ? parseInt(limit) : 50,
-    })
+    const params = new URLSearchParams()
+    if (status) params.set('status', status)
+    if (recipient) params.set('recipient', recipient)
+    if (limit) params.set('limit', limit)
+    const query = params.toString() ? `?${params.toString()}` : ''
+    return proxyToAdmin(req, reply, 'GET', `/admin/logs${query}`)
   })
 
-  // ── Filters ────────────────────────────────────────────────────
+  // ── Filter routes ──────────────────────────────────────────────
 
-  // ── GET /admin/filters ─────────────────────────────────────────
-  app.get('/admin/filters', { preHandler: requireAdmin }, async () => {
-    return db.listFilters()
+  app.get('/admin/filters', { preHandler: requireAdmin }, async (req, reply) => {
+    return proxyToAdmin(req, reply, 'GET', '/admin/filters')
   })
 
-  // ── GET /admin/filters/:id ─────────────────────────────────────
   app.get<{ Params: { id: string } }>('/admin/filters/:id', { preHandler: requireAdmin }, async (req, reply) => {
-    const filterId = parseInt(req.params.id)
-    if (isNaN(filterId)) {
-      return reply.status(400).send({ error: 'Invalid filter id' })
-    }
-    const filter = db.getFilter(filterId)
-    if (!filter) {
-      return reply.status(404).send({ error: 'Filter not found' })
-    }
-    return filter
+    return proxyToAdmin(req, reply, 'GET', `/admin/filters/${req.params.id}`)
   })
 
-  // ── POST /admin/filters ────────────────────────────────────────
   app.post('/admin/filters', { preHandler: requireAdmin }, async (req, reply) => {
-    const { name, path, hooks } = req.body as any
-    if (!name || !path || !hooks) {
-      return reply.status(400).send({ error: 'name, path, and hooks are required' })
-    }
-    if (!Array.isArray(hooks) || hooks.length === 0) {
-      return reply.status(400).send({ error: 'hooks must be a non-empty array (mail_from, rcpt_to, data)' })
-    }
-    const validHooks = ['mail_from', 'rcpt_to', 'data']
-    for (const h of hooks) {
-      if (!validHooks.includes(h)) {
-        return reply.status(400).send({ error: `Invalid hook: ${h}. Must be one of: ${validHooks.join(', ')}` })
-      }
-    }
-    const id = db.createFilter(name, path, hooks)
-    return { ok: true, id, filter: db.getFilter(id) }
+    return proxyToAdmin(req, reply, 'POST', '/admin/filters', req.body)
   })
 
-  // ── PATCH /admin/filters/:id ───────────────────────────────────
   app.patch<{ Params: { id: string } }>('/admin/filters/:id', { preHandler: requireAdmin }, async (req, reply) => {
-    const filterId = parseInt(req.params.id)
-    if (isNaN(filterId)) {
-      return reply.status(400).send({ error: 'Invalid filter id' })
-    }
-    const existing = db.getFilter(filterId)
-    if (!existing) {
-      return reply.status(404).send({ error: 'Filter not found' })
-    }
-    const { enabled } = req.body as any
-    if (enabled !== undefined) {
-      db.setFilterEnabled(filterId, !!enabled)
-    }
-    return { ok: true, filter: db.getFilter(filterId) }
+    return proxyToAdmin(req, reply, 'PATCH', `/admin/filters/${req.params.id}`, req.body)
   })
 
-  // ── DELETE /admin/filters/:id ──────────────────────────────────
   app.delete<{ Params: { id: string } }>('/admin/filters/:id', { preHandler: requireAdmin }, async (req, reply) => {
-    const filterId = parseInt(req.params.id)
-    if (isNaN(filterId)) {
-      return reply.status(400).send({ error: 'Invalid filter id' })
-    }
-    const deleted = db.deleteFilter(filterId)
-    if (!deleted) {
-      return reply.status(404).send({ error: 'Filter not found' })
-    }
-    return { ok: true }
+    return proxyToAdmin(req, reply, 'DELETE', `/admin/filters/${req.params.id}`)
   })
 
-  // ── Custom Domains ───────────────────────────────────────────
+  // ── Domain routes ──────────────────────────────────────────────
 
-  // GET /admin/domains — list user's custom domains
-  app.get('/admin/domains', { preHandler: requireAdmin }, async (req) => {
-    const user = (req as any).user
-    return db.listCustomDomains(user.id)
+  app.get('/admin/domains', { preHandler: requireAdmin }, async (req, reply) => {
+    return proxyToAdmin(req, reply, 'GET', '/admin/domains')
   })
 
-  // POST /admin/domains — add custom domain
-  app.post<{
-    Body: { domain: string }
-  }>('/admin/domains', { preHandler: requireAdmin }, async (req, reply) => {
-    const user = (req as any).user
-    const { domain } = (req.body as any) || {}
-    if (!domain || !domain.includes('.')) {
-      return reply.status(400).send({ error: 'Valid domain required (e.g. mail.example.com)' })
-    }
-
-    // Check if domain already taken
-    if (db.isDomainAllowed(domain)) {
-      return reply.status(409).send({ error: 'Domain already configured' })
-    }
-
-    const id = db.addCustomDomain(user.id, domain)
-    return reply.status(201).send({
-      ok: true,
-      domain: { id, domain: domain.toLowerCase(), verified: false },
-      dns: {
-        mx: `MX record: ${domain.toLowerCase()} → your Stampd server IP`,
-        spf: `TXT record for ${domain.toLowerCase()}: "v=spf1 ip4:YOUR_SERVER_IP ~all"`,
-        dkim: `TXT record for default._domainkey.${domain.toLowerCase()}: your DKIM public key`,
-        note: 'Configure these DNS records, then verify the domain.',
-      },
-    })
+  app.post<{ Body: { domain: string } }>('/admin/domains', { preHandler: requireAdmin }, async (req, reply) => {
+    return proxyToAdmin(req, reply, 'POST', '/admin/domains', req.body)
   })
 
-  // POST /admin/domains/verify — verify DNS records are set
-  app.post<{
-    Body: { id: number }
-  }>('/admin/domains/verify', { preHandler: requireAdmin }, async (req, reply) => {
-    const { id } = (req.body as any) || {}
-    if (!id) return reply.status(400).send({ error: 'Missing domain id' })
-
-    const domains = db.listCustomDomains((req as any).user.id)
-    const domain = domains.find((d: any) => d.id === id)
-    if (!domain) return reply.status(404).send({ error: 'Domain not found' })
-
-    // Get server IP from config
-    const config = db.getServerConfig()
-    const serverIp = process.env.SERVER_IP || '127.0.0.1'
-
-    // Verify DNS records
-    const verification = await verifyDns(domain.domain, serverIp)
-
-    if (verification.ready) {
-      db.verifyCustomDomain(id)
-      return {
-        ok: true,
-        verified: true,
-        domain: domain.domain,
-        dns: verification,
-      }
-    }
-
-    return {
-      ok: false,
-      verified: false,
-      domain: domain.domain,
-      dns: verification,
-      instructions: getDnsInstructions(domain.domain, serverIp),
-    }
+  app.post<{ Body: { id: number } }>('/admin/domains/verify', { preHandler: requireAdmin }, async (req, reply) => {
+    return proxyToAdmin(req, reply, 'POST', '/admin/domains/verify', req.body)
   })
 
-  // DELETE /admin/domains/:id — remove custom domain
   app.delete<{ Params: { id: string } }>('/admin/domains/:id', { preHandler: requireAdmin }, async (req, reply) => {
-    const domainId = parseInt(req.params.id)
-    if (isNaN(domainId)) {
-      return reply.status(400).send({ error: 'Invalid domain id' })
-    }
-    const deleted = db.deleteCustomDomain(domainId)
-    if (!deleted) {
-      return reply.status(404).send({ error: 'Domain not found' })
-    }
-    return { ok: true }
+    return proxyToAdmin(req, reply, 'DELETE', `/admin/domains/${req.params.id}`)
+  })
+
+  // ── Quota route ────────────────────────────────────────────────
+
+  app.get('/admin/quota', { preHandler: requireAdmin }, async (req, reply) => {
+    // TODO: proxy to admin service when quota endpoint is implemented
+    return reply.status(501).send({ error: 'Not implemented' })
   })
 }

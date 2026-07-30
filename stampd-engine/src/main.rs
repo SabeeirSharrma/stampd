@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{error, info};
 
 // Use the engine library for all modules
@@ -6,7 +8,6 @@ use stampd_engine::{
     api, config::Config, db, dkim, maildir, queue, smtpd, stats, submissiond, tls, ENGINE_DB,
     ENGINE_STATS,
 };
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,17 +27,26 @@ async fn main() -> anyhow::Result<()> {
     let config = Config::load(&config_path)?;
     info!(?config, "Loaded configuration");
 
+    let config = Arc::new(RwLock::new(config));
+    let config_for_reload = config.clone();
+    let config_path_for_reload = config_path.clone();
+
     // Ensure parent directories for DB and filters exist
-    if let Some(parent) = std::path::Path::new(&config.engine.db_path).parent() {
-        std::fs::create_dir_all(parent)?;
+    {
+        let cfg = config.read().await;
+        if let Some(parent) = std::path::Path::new(&cfg.engine.db_path).parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::create_dir_all(&cfg.engine.filters_dir)?;
     }
-    std::fs::create_dir_all(&config.engine.filters_dir)?;
 
     // Initialize database
-    let database = Arc::new(db::Database::open(std::path::Path::new(
-        &config.engine.db_path,
-    ))?);
-    info!(path = %config.engine.db_path, "Database initialized");
+    let db_path = {
+        let cfg = config.read().await;
+        cfg.engine.db_path.clone()
+    };
+    let database = Arc::new(db::Database::open(std::path::Path::new(&db_path))?);
+    info!(path = %db_path, "Database initialized");
 
     // Set global database handle for napi exports
     let _ = ENGINE_DB.set(database.clone());
@@ -46,16 +56,20 @@ async fn main() -> anyhow::Result<()> {
     let _ = ENGINE_STATS.set(engine_stats.clone());
 
     // Seed server_config if it doesn't exist
+    let (domain, dkim_selector) = {
+        let cfg = config.read().await;
+        (cfg.engine.domain.clone(), cfg.engine.dkim_selector.clone())
+    };
     match database.get_server_config() {
         Ok(_) => info!("Server config exists"),
         Err(_) => {
             let conn = {
-                let c = rusqlite::Connection::open(&config.engine.db_path)?;
+                let c = rusqlite::Connection::open(&db_path)?;
                 c.execute(
                     "INSERT INTO server_config (id, domain, signup_enabled, dkim_selector) VALUES (1, ?1, 1, ?2)",
-                    rusqlite::params![config.engine.domain, config.engine.dkim_selector],
+                    rusqlite::params![domain, dkim_selector],
                 )?;
-                info!(domain = %config.engine.domain, "Seeded server_config");
+                info!(domain = %domain, "Seeded server_config");
                 c
             };
             drop(conn);
@@ -63,79 +77,124 @@ async fn main() -> anyhow::Result<()> {
     }
 
     // Initialize maildir
-    maildir::init(&config.engine.maildir_path).await?;
+    {
+        let cfg = config.read().await;
+        maildir::init(&cfg.engine.maildir_path).await?;
+    }
 
     // Load TLS config for STARTTLS
-    let tls_config = tls::try_load(
-        config
-            .engine
-            .tls_cert_path
-            .as_ref()
-            .map(std::path::Path::new),
-        config
-            .engine
-            .tls_key_path
-            .as_ref()
-            .map(std::path::Path::new),
-    );
+    let tls_config = {
+        let cfg = config.read().await;
+        tls::try_load(
+            cfg.engine.tls_cert_path.as_ref().map(std::path::Path::new),
+            cfg.engine.tls_key_path.as_ref().map(std::path::Path::new),
+        )
+    };
 
     // Initialize DKIM signer
-    let dkim_signer = match dkim::DkimSigner::new(
-        &config.engine.domain,
-        &config.engine.dkim_selector,
-        std::path::Path::new(&config.engine.dkim_key_dir),
-    ) {
-        Ok(signer) => {
-            info!(selector = %config.engine.dkim_selector, "DKIM signer initialized");
-            Some(signer)
-        }
-        Err(e) => {
-            error!(error = ?e, "Failed to initialize DKIM signer — outgoing mail unsigned");
-            None
+    let dkim_signer = {
+        let cfg = config.read().await;
+        match dkim::DkimSigner::new(
+            &cfg.engine.domain,
+            &cfg.engine.dkim_selector,
+            std::path::Path::new(&cfg.engine.dkim_key_dir),
+        ) {
+            Ok(signer) => {
+                info!(selector = %cfg.engine.dkim_selector, "DKIM signer initialized");
+                Some(signer)
+            }
+            Err(e) => {
+                error!(error = ?e, "Failed to initialize DKIM signer — outgoing mail unsigned");
+                None
+            }
         }
     };
 
     // Start inbound SMTP server (with TLS and filters)
     let smtp_tls = tls_config.clone();
     let smtp_stats = engine_stats.clone();
-    let smtp_handle = tokio::spawn(smtpd::run(
-        config.engine.smtp_port,
-        config.engine.maildir_path.clone(),
-        config.engine.domain.clone(),
-        database.clone(),
-        smtp_tls,
-        std::path::PathBuf::from(&config.engine.filters_dir),
-        config.engine.filters_timeout_ms,
-        config.engine.gateway_url.clone(),
-        smtp_stats,
-    ));
+    let smtp_config = config.clone();
+    let smtp_db = database.clone();
+    let smtp_handle = tokio::spawn(async move {
+        let cfg = smtp_config.read().await;
+        smtpd::run(
+            cfg.engine.smtp_port,
+            cfg.engine.maildir_path.clone(),
+            cfg.engine.domain.clone(),
+            smtp_db,
+            smtp_tls,
+            std::path::PathBuf::from(&cfg.engine.filters_dir),
+            cfg.engine.filters_timeout_ms,
+            cfg.engine.gateway_url.clone(),
+            smtp_stats,
+        )
+        .await
+    });
 
     // Start outbound submission server (with DKIM and TLS)
     let submission_dkim = dkim_signer.clone();
     let submission_tls = tls_config.as_ref().map(|tc| tc.server_config.clone());
     let submission_stats = engine_stats.clone();
-    let submission_handle = tokio::spawn(submissiond::run(
-        config.engine.submission_port,
-        config.engine.dkim_selector.clone(),
-        database.clone(),
-        submission_dkim,
-        submission_tls,
-        submission_stats,
-    ));
+    let submission_config = config.clone();
+    let submission_db = database.clone();
+    let submission_handle = tokio::spawn(async move {
+        let cfg = submission_config.read().await;
+        submissiond::run(
+            cfg.engine.submission_port,
+            cfg.engine.dkim_selector.clone(),
+            submission_db,
+            submission_dkim,
+            submission_tls,
+            submission_stats,
+        )
+        .await
+    });
 
     // Start queue processor
-    let queue_handle = tokio::spawn(queue::run(
-        database.clone(),
-        config.engine.maildir_path.clone(),
-    ));
+    let queue_config = config.clone();
+    let queue_db = database.clone();
+    let queue_handle = tokio::spawn(async move {
+        let cfg = queue_config.read().await;
+        queue::run(queue_db, cfg.engine.maildir_path.clone()).await
+    });
 
     // Start internal API server
     let api_stats = engine_stats.clone();
+    let api_db = database.clone();
     let api_handle = tokio::spawn(api::run(
-        config.engine.api_port,
-        database.clone(),
+        {
+            let cfg = config.read().await;
+            cfg.engine.api_port
+        },
+        api_db,
         api_stats,
+        config.clone(),
+        config_path.clone(),
     ));
+
+    // SIGHUP handler — reload config
+    let sighup_config = config_for_reload;
+    let sighup_path = config_path_for_reload;
+    tokio::spawn(async move {
+        loop {
+            // Wait for SIGHUP (using signal_hook)
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+                .expect("Failed to register SIGHUP handler")
+                .recv()
+                .await;
+            info!("Received SIGHUP, reloading configuration...");
+            match Config::load(&sighup_path) {
+                Ok(new_config) => {
+                    let mut cfg = sighup_config.write().await;
+                    *cfg = new_config;
+                    info!("Configuration reloaded via SIGHUP");
+                }
+                Err(e) => {
+                    error!("Failed to reload config via SIGHUP: {}", e);
+                }
+            }
+        }
+    });
 
     info!("Stampd engine started");
 

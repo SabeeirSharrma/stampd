@@ -3,10 +3,12 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .routes import config, domains, filters, logs, queue, tokens, users
+
 app = FastAPI(
     title="Stampd Admin",
     description="Stampd admin service — business logic and user management",
-    version="0.1.0",
+    version="0.8.0",
 )
 
 # CORS configuration
@@ -19,13 +21,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Register routers
+app.include_router(users.router)
+app.include_router(tokens.router)
+app.include_router(config.router)
+app.include_router(queue.router)
+app.include_router(logs.router)
+app.include_router(filters.router)
+app.include_router(domains.router)
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "stampd-admin"}
-
-
-# TODO: Add user management endpoints
-# TODO: Add token management endpoints
-# TODO: Add domain config endpoints
-# TODO: Add delivery log endpoints
