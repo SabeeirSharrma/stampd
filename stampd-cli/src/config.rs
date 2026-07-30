@@ -41,21 +41,27 @@ pub struct FiltersSection {
     pub timeout_ms: u64,
 }
 
+#[allow(dead_code)]
 fn default_smtp_port() -> u16 {
     25
 }
+#[allow(dead_code)]
 fn default_submission_port() -> u16 {
     587
 }
+#[allow(dead_code)]
 fn default_maildir_path() -> String {
     "/var/lib/stampd/mail".to_string()
 }
+#[allow(dead_code)]
 fn default_dkim_selector() -> String {
     "default".to_string()
 }
+#[allow(dead_code)]
 fn default_true() -> bool {
     true
 }
+#[allow(dead_code)]
 fn default_timeout_ms() -> u64 {
     500
 }
