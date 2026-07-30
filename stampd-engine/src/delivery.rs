@@ -113,7 +113,14 @@ async fn try_deliver(
     send_cmd(&mut writer, &mut reader, &mut line, &format!("EHLO {}", hostname), "EHLO").await?;
 
     // Try STARTTLS (best-effort)
-    let _tls_active = try_starttls(&mut writer, &mut reader, &mut line).await;
+    let tls_active = try_starttls(&mut writer, &mut reader, &mut line).await;
+
+    // If TLS was activated, we need to re-split the stream
+    // For now, we continue with the plaintext reader/writer
+    // TODO: Properly handle TLS stream reassembly
+    if tls_active {
+        info!("STARTTLS accepted — continuing with plaintext (TLS upgrade not yet implemented)");
+    }
 
     // MAIL FROM
     send_cmd(&mut writer, &mut reader, &mut line, &format!("MAIL FROM:<{}>", from), "MAIL FROM").await?;
@@ -198,8 +205,9 @@ async fn try_starttls(
     }
 
     if line.trim().starts_with("2") {
-        info!("STARTTLS accepted — but TLS upgrade not yet implemented");
-        // TODO: Phase 0.2.3 — perform TLS handshake here
+        info!("STARTTLS accepted — TLS upgrade available");
+        // TODO: Perform TLS handshake here
+        // For now, return true but don't actually upgrade
         true
     } else {
         info!(response = %line.trim(), "STARTTLS not available");
@@ -207,42 +215,43 @@ async fn try_starttls(
     }
 }
 
-/// DNS MX record lookup using the system resolver.
+/// DNS MX record lookup using trust-dns-resolver.
 ///
 /// Returns MX hosts sorted by priority (lowest first).
 async fn lookup_mx(domain: &str) -> Result<Vec<String>, String> {
-    // Use std::net for blocking DNS lookup in a blocking task
-    let domain = domain.to_string();
-    tokio::task::spawn_blocking(move || {
-        use std::net::ToSocketAddrs;
+    use trust_dns_resolver::TokioAsyncResolver;
+    use trust_dns_resolver::config::*;
 
-        let mut candidates = Vec::new();
+    let resolver = TokioAsyncResolver::tokio_from_system_conf()
+        .map_err(|e| format!("Failed to create DNS resolver: {}", e))?;
 
-        // Try MX lookup via DNS
-        let mx_records = resolve_mx(&domain);
-        candidates.extend(mx_records);
+    // Query MX records
+    let mx_response = resolver.mx_lookup(domain)
+        .await
+        .map_err(|e| format!("MX lookup failed: {}", e))?;
 
-        // Fallback: try the domain itself as a mail server
-        if candidates.is_empty() {
-            let addr = format!("{}:25", domain);
-            if addr.to_socket_addrs().is_ok() {
-                candidates.push(domain.clone());
-            }
+    // Sort by priority (lowest first)
+    let mut mx_records: Vec<(u16, String)> = mx_response.iter()
+        .map(|mx| (mx.preference(), mx.exchange().to_string().trim_end_matches('.').to_string()))
+        .collect();
+
+    mx_records.sort_by_key(|(preference, _)| *preference);
+
+    let mx_hosts: Vec<String> = mx_records.into_iter()
+        .map(|(_, exchange)| exchange)
+        .collect();
+
+    if mx_hosts.is_empty() {
+        // Fallback: try A/AAAA record of the domain itself
+        let addrs = resolver.lookup_ip(domain).await
+            .map_err(|e| format!("IP lookup failed: {}", e))?;
+
+        if addrs.iter().next().is_some() {
+            return Ok(vec![domain.to_string()]);
         }
 
-        Ok(candidates)
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
-}
-
-/// Simple MX record resolver — returns domain if it resolves.
-fn resolve_mx(domain: &str) -> Option<String> {
-    use std::net::ToSocketAddrs;
-    let addr = format!("{}:25", domain);
-    if addr.to_socket_addrs().is_ok() {
-        Some(domain.to_string())
-    } else {
-        None
+        return Err(format!("No MX or A records for {}", domain));
     }
+
+    Ok(mx_hosts)
 }
