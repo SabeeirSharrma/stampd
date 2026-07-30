@@ -46,6 +46,129 @@ curl -fsSL https://sabeeir.qd.je/stampd/install.sh | sudo bash
 
 See [docs/QUICKSTART.md](docs/QUICKSTART.md) for detailed instructions.
 
+## Launch from Source
+
+### Prerequisites
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| **Rust** | 1.82+ | Engine + CLI |
+| **Bun** | latest | Gateway + Web |
+| **Python** | 3.11+ | Admin service |
+| **pip** | — | Python packages |
+
+### 1. Install dependencies
+
+```bash
+# Rust (if not installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# Bun (if not installed)
+curl -fsSL https://bun.sh/install | bash
+
+# Python deps for admin service
+cd stampd-admin
+pip install -r <(python3 -c "
+import tomllib
+with open('pyproject.toml','rb') as f: d=tomllib.load(f)
+print('\n'.join(d['project']['dependencies']))
+")
+cd ..
+
+# Node deps for gateway + web
+cd stampd-gateway && bun install && cd ..
+cd stampd-web && bun install && cd ..
+```
+
+### 2. Configure
+
+```bash
+cargo run --bin stampd -- init
+# Creates stampd.toml with sensible defaults.
+# Edit it — at minimum set your domain under [engine].
+```
+
+### 3. Build
+
+```bash
+cargo build --release
+```
+
+This produces `target/release/stampd-engine` and `target/release/stampd`.
+
+### 4. Initialize the database
+
+```bash
+# The engine creates the schema on first run, but if you want to
+# initialize without starting SMTP, run the engine briefly:
+./target/release/stampd-engine stampd.toml &
+sleep 2
+kill %1
+```
+
+### 5. Start services
+
+**Option A — use the CLI supervisor (recommended):**
+
+```bash
+./target/release/stampd up
+# Starts engine, gateway, admin, and web. Ctrl+C stops all.
+```
+
+**Option B — run each service individually:**
+
+```bash
+# Engine (SMTP + submission + queue)
+STAMPD_DB_PATH=./data/stampd.db ./target/release/stampd-engine stampd.toml &
+
+# Admin service (port 8081)
+cd stampd-admin
+STAMPD_DB_PATH=/full/path/to/data/stampd.db \
+  python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8081 &
+cd ..
+
+# Gateway (port 8080)
+cd stampd-gateway
+ADMIN_URL=http://127.0.0.1:8081 \
+  bun run src/index.ts &
+cd ..
+
+# Web UI (port 3000)
+cd stampd-web
+bun run src/index.ts &
+cd ..
+```
+
+### 6. Verify it's running
+
+```bash
+# Health checks
+curl http://localhost:8081/health    # admin
+curl http://localhost:8080/health    # gateway
+curl http://localhost:3000           # web UI (open in browser)
+
+# SMTP test
+telnet localhost 25
+# Should respond: 220 stampd ESMTP
+```
+
+### Port Reference
+
+| Port | Protocol | Public? | Purpose |
+|------|----------|---------|---------|
+| **25** | SMTP | **Yes** | Inbound mail (other servers send to you) |
+| **587** | SMTP | **Yes** | Submission (authenticated sending) |
+| **8080** | HTTP | No | Gateway API (internal) |
+| **8081** | HTTP | No | Admin API (internal) |
+| **3000** | HTTP | No | Web UI (local browser) |
+
+**Only ports 25 and 587 need to be forwarded** from your router/firewall
+to your server's IP. The gateway, admin, and web UI are accessed locally.
+
+If you're running from your local machine and only sending mail (not
+receiving from external servers), you don't need to forward port 25 —
+only 587 for submission.
+
 ## Architecture
 
 ```
@@ -129,16 +252,15 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for all options.
 
 ## Development
 
+See [Launch from Source](#launch-from-source) above for full setup instructions.
+
 ```bash
-# Clone and setup
-git clone https://github.com/sabeeir/stampd.git
-cd stampd
-
-# Build
+# Build + run with CLI supervisor
 cargo build --release
+./target/release/stampd up
 
-# Run in development
-cargo run --bin stampd -- up
+# Or run individual services for development
+STAMPD_DB_PATH=./data/stampd.db ./target/release/stampd-engine stampd.toml
 ```
 
 ## Deployment
