@@ -36,7 +36,7 @@ Stampd is a complete SMTP mail server solution that lets you:
 
 ```bash
 # Docker (recommended)
-git clone https://github.com/sabeeir/stampd.git
+git clone https://github.com/sabeeirsharrma/stampd.git
 cd stampd
 docker-compose up -d
 
