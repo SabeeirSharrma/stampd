@@ -1,11 +1,20 @@
 ---
 import Base from "../layouts/Base.astro";
-import MailList from "../components/react/MailList";
-import MailView from "../components/react/MailView";
+import MailApp from "../components/react/MailApp";
 import "../styles/global.css";
+
+const currentFolder = Astro.url.searchParams.get("folder") || "inbox";
+
+const links = [
+  { href: "/inbox", folder: "inbox", label: "Inbox", icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>` },
+  { href: "/sent", folder: "sent", label: "Sent", icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>` },
+  { href: "/inbox?folder=drafts", folder: "drafts", label: "Drafts", icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>` },
+  { href: "/inbox?folder=archive", folder: "archive", label: "Archive", icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>` },
+  { href: "/inbox?folder=spam", folder: "spam", label: "Spam", icon: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>` }
+];
 ---
 
-<Base title="Stampd | Inbox">
+<Base title={`Stampd | ${currentFolder.charAt(0).toUpperCase() + currentFolder.slice(1)}`}>
   <div class="flex h-screen w-full overflow-hidden">
     <!-- SIDEBAR -->
     <aside class="flex flex-col h-screen w-[240px] p-6 bg-surface-container-lowest border-r border-outline-variant z-40 shrink-0">
@@ -15,26 +24,19 @@ import "../styles/global.css";
       </div>
 
       <nav class="flex-1 space-y-1" id="sidebar-nav">
-        <a href="/inbox" data-folder="inbox" class="sidebar-link flex items-center gap-3 px-4 py-2.5 rounded transition-all duration-200 bg-secondary-container text-on-secondary-container font-bold">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
-          <span class="text-label-md flex-1">Inbox</span>
-        </a>
-        <a href="/sent" data-folder="sent" class="sidebar-link flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-          <span class="text-label-md flex-1">Sent</span>
-        </a>
-        <a href="/inbox?folder=drafts" data-folder="drafts" class="sidebar-link flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
-          <span class="text-label-md flex-1">Drafts</span>
-        </a>
-        <a href="/inbox?folder=archive" data-folder="archive" class="sidebar-link flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
-          <span class="text-label-md flex-1">Archive</span>
-        </a>
-        <a href="/inbox?folder=spam" data-folder="spam" class="sidebar-link flex items-center gap-3 px-4 py-2.5 rounded text-on-surface-variant hover:bg-surface-variant transition-colors duration-200">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-          <span class="text-label-md flex-1">Spam</span>
-        </a>
+        {links.map(link => {
+          const isActive = link.folder === currentFolder;
+          return (
+            <a 
+              href={link.href} 
+              data-folder={link.folder} 
+              class={`sidebar-link flex items-center gap-3 px-4 py-2.5 rounded transition-colors duration-200 ${isActive ? 'bg-secondary-container text-on-secondary-container font-bold' : 'text-on-surface-variant hover:bg-surface-variant'}`}
+            >
+              <Fragment set:html={link.icon} />
+              <span class="text-label-md flex-1">{link.label}</span>
+            </a>
+          );
+        })}
       </nav>
 
       <div class="mt-auto space-y-4">
@@ -60,11 +62,13 @@ import "../styles/global.css";
     </aside>
 
     <!-- REACT MAIL APP -->
-    <div id="mail-app" class="flex flex-1 h-screen min-w-0"></div>
+    <div id="mail-app" class="flex flex-1 h-screen min-w-0">
+      <MailApp client:only="react" initialFolder={currentFolder} />
+    </div>
   </div>
 
   <script>
-    import { getUser, requireAuth, setUser } from "../lib/auth";
+    import { requireAuth, setUser } from "../lib/auth";
     import { logout as apiLogout } from "../lib/api";
 
     const user = requireAuth();
@@ -75,17 +79,5 @@ import "../styles/global.css";
       setUser(null);
       window.location.href = "/";
     });
-  </script>
-
-  <script>
-    import React from "react";
-    import { createRoot } from "react-dom/client";
-    import MailApp from "../components/react/MailApp";
-
-    const container = document.getElementById("mail-app");
-    if (container) {
-      const root = createRoot(container);
-      root.render(React.createElement(MailApp));
-    }
   </script>
 </Base>

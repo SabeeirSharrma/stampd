@@ -1,7 +1,7 @@
 [engine]
 smtp_port = 25
 submission_port = 587
-domain = "sabeeir.qd.je"
+domain = "mail.sabeeir.qd.je"
 maildir_path = "/run/media/sabeeir/Work/SabeeirSharrma/stampd/data/mail"
 db_path = "/run/media/sabeeir/Work/SabeeirSharrma/stampd/data/stampd.db"
 dkim_selector = "default"
