@@ -3,12 +3,12 @@
 //! Requires AUTH — tokens or SMTP AUTH PLAIN/LOGIN over TLS.
 //! Signs with DKIM and enqueues for delivery.
 
-use tokio::net::TcpListener;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tracing::{info, warn, error};
-use std::sync::Arc;
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
+use tracing::{error, info, warn};
 
 use crate::db::Database;
 use crate::dkim::DkimSigner;
@@ -55,11 +55,17 @@ pub async fn run(
     stats: Arc<EngineStats>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    info!(port, dkim = dkim_signer.is_some(), tls = tls_config.is_some(), "Submission server listening");
+    info!(
+        port,
+        dkim = dkim_signer.is_some(),
+        tls = tls_config.is_some(),
+        "Submission server listening"
+    );
 
     // Get domain from server_config
-    let (domain, _, _) = db.get_server_config()
-        .unwrap_or(("localhost".to_string(), true, "default".to_string()));
+    let (domain, _, _) =
+        db.get_server_config()
+            .unwrap_or(("localhost".to_string(), true, "default".to_string()));
 
     loop {
         let (stream, addr) = listener.accept().await?;
@@ -74,7 +80,16 @@ pub async fn run(
         let stats = stats.clone();
 
         tokio::spawn(async move {
-            let result = handle_submission(stream, addr, db, dkim_selector, domain, dkim_signer, tls_config).await;
+            let result = handle_submission(
+                stream,
+                addr,
+                db,
+                dkim_selector,
+                domain,
+                dkim_signer,
+                tls_config,
+            )
+            .await;
             stats.connection_closed();
             if let Err(e) = result {
                 error!(addr = %addr, error = ?e, "Submission error");
@@ -110,9 +125,7 @@ async fn handle_submission(
     };
 
     // Greeting
-    stream
-        .write_all(b"220 Stampd Submission ready\r\n")
-        .await?;
+    stream.write_all(b"220 Stampd Submission ready\r\n").await?;
 
     loop {
         line.clear();
@@ -141,10 +154,8 @@ async fn handle_submission(
         let response = match verb.as_str() {
             "HELO" | "EHLO" => {
                 if verb == "EHLO" {
-                    let mut ehlo = format!(
-                        "250-{}\r\n250-8BITMIME\r\n250-AUTH PLAIN LOGIN\r\n",
-                        domain
-                    );
+                    let mut ehlo =
+                        format!("250-{}\r\n250-8BITMIME\r\n250-AUTH PLAIN LOGIN\r\n", domain);
                     // Only advertise STARTTLS if TLS is configured and not yet active
                     if session.tls_config.is_some() && !session.tls_active {
                         ehlo.push_str("250-STARTTLS\r\n");
@@ -322,7 +333,9 @@ async fn handle_submission(
                 } else if session.mail_from.is_none() || session.rcpt_to.is_empty() {
                     "503 Bad sequence of commands\r\n".to_string()
                 } else {
-                    stream.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
+                    stream
+                        .write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n")
+                        .await?;
 
                     let message = read_message_body(&mut stream, &mut line).await;
 
@@ -354,9 +367,7 @@ async fn handle_submission(
                 stream.write_all(b"221 Bye\r\n").await?;
                 break;
             }
-            "NOOP" => {
-                "250 OK\r\n".to_string()
-            }
+            "NOOP" => "250 OK\r\n".to_string(),
             _ => {
                 warn!(addr = %addr, verb = %verb, "Unknown command");
                 "500 Command not recognized\r\n".to_string()
@@ -461,7 +472,9 @@ async fn tls_session(
                 } else if session.mail_from.is_none() || session.rcpt_to.is_empty() {
                     "503 Bad sequence of commands\r\n".to_string()
                 } else {
-                    tls_stream.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
+                    tls_stream
+                        .write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n")
+                        .await?;
 
                     let message = read_message_body(&mut tls_stream, line).await;
 
@@ -493,9 +506,7 @@ async fn tls_session(
                 tls_stream.write_all(b"221 Bye\r\n").await?;
                 break;
             }
-            "NOOP" => {
-                "250 OK\r\n".to_string()
-            }
+            "NOOP" => "250 OK\r\n".to_string(),
             _ => {
                 warn!(addr = %addr, verb = %verb, "Unknown command");
                 "500 Command not recognized\r\n".to_string()
@@ -513,7 +524,8 @@ async fn tls_session(
 
 /// Authenticate a user by email and password.
 fn authenticate_user(email: &str, password: &str, db: &Database) -> Result<i64, String> {
-    let (user_id, password_hash, _is_admin, disabled) = db.get_user_by_email(email)
+    let (user_id, password_hash, _is_admin, disabled) = db
+        .get_user_by_email(email)
         .map_err(|e| format!("Database error: {}", e))?
         .ok_or("Invalid credentials".to_string())?;
 
@@ -531,7 +543,10 @@ fn authenticate_user(email: &str, password: &str, db: &Database) -> Result<i64, 
 
 /// Verify a password against its hash using argon2id.
 fn verify_password(password: &str, hash: &str) -> bool {
-    use argon2::{Argon2, password_hash::{PasswordHash, PasswordVerifier}};
+    use argon2::{
+        password_hash::{PasswordHash, PasswordVerifier},
+        Argon2,
+    };
 
     let parsed_hash = match PasswordHash::new(hash) {
         Ok(h) => h,
@@ -608,11 +623,9 @@ async fn read_message_body(
 /// Enqueue the message for delivery to all recipients.
 ///
 /// Signs with DKIM before enqueuing if DKIM signer is available.
-async fn enqueue_message(
-    session: &SubmissionSession,
-    message: &[u8],
-) -> anyhow::Result<usize> {
-    let user_id = session.authenticated_user_id
+async fn enqueue_message(session: &SubmissionSession, message: &[u8]) -> anyhow::Result<usize> {
+    let user_id = session
+        .authenticated_user_id
         .ok_or_else(|| anyhow::anyhow!("Not authenticated"))?;
 
     let timestamp = std::time::SystemTime::now()
@@ -621,8 +634,15 @@ async fn enqueue_message(
 
     // Build the full .eml with envelope headers
     let mut full_message = Vec::new();
-    full_message.extend_from_slice(format!("X-Stampd-From: {}\r\n", session.mail_from.as_deref().unwrap_or("")).as_bytes());
-    full_message.extend_from_slice(format!("X-Stampd-To: {}\r\n", session.rcpt_to.join(", ")).as_bytes());
+    full_message.extend_from_slice(
+        format!(
+            "X-Stampd-From: {}\r\n",
+            session.mail_from.as_deref().unwrap_or("")
+        )
+        .as_bytes(),
+    );
+    full_message
+        .extend_from_slice(format!("X-Stampd-To: {}\r\n", session.rcpt_to.join(", ")).as_bytes());
     full_message.extend_from_slice(b"\r\n");
     full_message.extend_from_slice(message);
 
@@ -662,11 +682,9 @@ async fn enqueue_message(
         tokio::fs::write(&msg_path, &signed_message).await?;
 
         // Enqueue in database
-        session.db.enqueue(
-            user_id,
-            recipient,
-            msg_path.to_str().unwrap_or(""),
-        )?;
+        session
+            .db
+            .enqueue(user_id, recipient, msg_path.to_str().unwrap_or(""))?;
         count += 1;
     }
 

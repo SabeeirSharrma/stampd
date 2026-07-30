@@ -37,12 +37,24 @@ pub struct FiltersSection {
     pub timeout_ms: u64,
 }
 
-fn default_smtp_port() -> u16 { 25 }
-fn default_submission_port() -> u16 { 587 }
-fn default_maildir_path() -> String { "/var/lib/stampd/mail".to_string() }
-fn default_dkim_selector() -> String { "default".to_string() }
-fn default_true() -> bool { true }
-fn default_timeout_ms() -> u64 { 500 }
+fn default_smtp_port() -> u16 {
+    25
+}
+fn default_submission_port() -> u16 {
+    587
+}
+fn default_maildir_path() -> String {
+    "/var/lib/stampd/mail".to_string()
+}
+fn default_dkim_selector() -> String {
+    "default".to_string()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_timeout_ms() -> u64 {
+    500
+}
 
 #[derive(Debug, Clone)]
 pub struct ServiceConfig {

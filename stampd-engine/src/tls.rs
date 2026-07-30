@@ -3,10 +3,10 @@
 //! Loads certificate and private key from PEM files.
 //! If no files are configured, STARTTLS is disabled.
 
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::ServerConfig;
 use std::path::Path;
 use std::sync::Arc;
-use rustls::ServerConfig;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tracing::{info, warn};
 
 /// TLS config holder for the SMTP server.
@@ -43,10 +43,13 @@ impl TlsConfig {
 fn load_cert_file(path: &Path) -> anyhow::Result<Vec<CertificateDer<'static>>> {
     let cert_file = std::fs::read(path)?;
     let mut reader = std::io::Cursor::new(cert_file);
-    let certs: Vec<CertificateDer<'static>> = rustls_pemfile::certs(&mut reader)
-        .collect::<Result<Vec<_>, _>>()?;
+    let certs: Vec<CertificateDer<'static>> =
+        rustls_pemfile::certs(&mut reader).collect::<Result<Vec<_>, _>>()?;
     if certs.is_empty() {
-        return Err(anyhow::anyhow!("No certificates found in {}", path.display()));
+        return Err(anyhow::anyhow!(
+            "No certificates found in {}",
+            path.display()
+        ));
     }
     Ok(certs)
 }

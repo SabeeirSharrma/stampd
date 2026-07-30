@@ -4,8 +4,8 @@
 //! Logs result but does NOT reject on softfail (best-effort per spec §11).
 
 use std::net::IpAddr;
-use trust_dns_resolver::TokioAsyncResolver;
 use tracing::{info, warn};
+use trust_dns_resolver::TokioAsyncResolver;
 
 /// Result of an SPF check.
 #[derive(Debug, Clone)]
@@ -56,18 +56,18 @@ pub async fn check_spf(sender_domain: &str, sender_ip: IpAddr) -> SpfResult {
     };
 
     // Find the SPF record (starts with "v=spf1")
-    let spf_record = txt_lookup.iter()
-        .find_map(|record| {
-            let data = record.txt_data();
-            let text = data.iter()
-                .map(|b| String::from_utf8_lossy(b).to_string())
-                .collect::<String>();
-            if text.starts_with("v=spf1") {
-                Some(text)
-            } else {
-                None
-            }
-        });
+    let spf_record = txt_lookup.iter().find_map(|record| {
+        let data = record.txt_data();
+        let text = data
+            .iter()
+            .map(|b| String::from_utf8_lossy(b).to_string())
+            .collect::<String>();
+        if text.starts_with("v=spf1") {
+            Some(text)
+        } else {
+            None
+        }
+    });
 
     let spf_record = match spf_record {
         Some(r) => r,
@@ -100,7 +100,8 @@ pub async fn check_spf(sender_domain: &str, sender_ip: IpAddr) -> SpfResult {
 fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
     let mechanisms: Vec<&str> = record.split_whitespace().collect();
 
-    for mechanism in mechanisms.iter().skip(1) { // Skip "v=spf1"
+    for mechanism in mechanisms.iter().skip(1) {
+        // Skip "v=spf1"
         if mechanism.starts_with("all") {
             // +all = pass, -all = fail, ~all = softfail, ?all = neutral
             return if mechanism.starts_with("+all") || mechanism.starts_with("?all") {
@@ -111,7 +112,7 @@ fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
                 // ~all (softfail) — we pass but log
                 info!(mechanism = %mechanism, "SPF softfail — accepting mail");
                 true
-            }
+            };
         }
 
         if mechanism.starts_with("ip4:") {
@@ -133,7 +134,10 @@ fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
         }
 
         // a, mx, include — complex lookups, log and skip for v1
-        if mechanism.starts_with("a") || mechanism.starts_with("mx") || mechanism.starts_with("include:") {
+        if mechanism.starts_with("a")
+            || mechanism.starts_with("mx")
+            || mechanism.starts_with("include:")
+        {
             info!(mechanism = %mechanism, "SPF mechanism not fully supported in v1, skipping");
             continue;
         }
@@ -145,7 +149,9 @@ fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
 
 fn parse_cidr(cidr: &str) -> Option<(IpAddr, u32)> {
     let parts: Vec<&str> = cidr.split('/').collect();
-    if parts.len() != 2 { return None; }
+    if parts.len() != 2 {
+        return None;
+    }
     let ip: IpAddr = parts[0].parse().ok()?;
     let prefix: u32 = parts[1].parse().ok()?;
     Some((ip, prefix))
@@ -153,7 +159,9 @@ fn parse_cidr(cidr: &str) -> Option<(IpAddr, u32)> {
 
 fn parse_cidr_v6(cidr: &str) -> Option<(IpAddr, u32)> {
     let parts: Vec<&str> = cidr.split('/').collect();
-    if parts.len() != 2 { return None; }
+    if parts.len() != 2 {
+        return None;
+    }
     let ip: IpAddr = parts[0].parse().ok()?;
     let prefix: u32 = parts[1].parse().ok()?;
     Some((ip, prefix))
@@ -184,7 +192,9 @@ fn sender_ip_matches_v6(sender_ip: IpAddr, network: IpAddr, prefix: u32) -> bool
 
             if bytes_to_check < 16 {
                 for i in 0..bytes_to_check {
-                    if s[i] != n[i] { return false; }
+                    if s[i] != n[i] {
+                        return false;
+                    }
                 }
                 if bits_remaining > 0 {
                     let mask = !0u8 << (8 - bits_remaining);

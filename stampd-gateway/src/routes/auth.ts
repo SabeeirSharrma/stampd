@@ -44,7 +44,7 @@ export default async function authRoutes(app: FastifyInstance) {
 
     const parsed = SignupSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.issues[0].message })
+      return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' })
     }
 
     const { email, password } = parsed.data
@@ -121,7 +121,7 @@ export default async function authRoutes(app: FastifyInstance) {
   }, async (req, reply) => {
     const parsed = LoginSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.issues[0].message })
+      return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' })
     }
 
     const { email, password } = parsed.data
@@ -216,7 +216,7 @@ export default async function authRoutes(app: FastifyInstance) {
 
     const parsed = CreateTokenSchema.safeParse(req.body)
     if (!parsed.success) {
-      return reply.status(400).send({ error: parsed.error.issues[0].message })
+      return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid request' })
     }
 
     const { label } = parsed.data

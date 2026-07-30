@@ -179,6 +179,7 @@ export default async function mailboxRoutes(app: FastifyInstance) {
       },
       response: {
         200: { $ref: 'MailboxMessageDetail' },
+        400: { $ref: 'Error' },
         404: { $ref: 'Error' },
       },
     },

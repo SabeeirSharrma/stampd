@@ -6,17 +6,17 @@
 //! Rejects any RCPT TO not addressed to the server's configured domain.
 //! Best-effort SPF check on sender IP.
 
-use tokio::net::TcpListener;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, AsyncRead};
-use tracing::{info, warn, error};
-use std::sync::Arc;
 use std::net::SocketAddr;
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWriteExt, BufReader};
+use tokio::net::TcpListener;
+use tracing::{error, info, warn};
 
 use crate::db::Database;
-use crate::tls::TlsConfig;
-use crate::spf::check_spf;
 use crate::filters::{self, FilterContext, HookPoint};
+use crate::spf::check_spf;
 use crate::stats::EngineStats;
+use crate::tls::TlsConfig;
 
 /// Per-session state during an SMTP transaction.
 struct SmtpSession {
@@ -64,7 +64,18 @@ pub async fn run(
         let stats = stats.clone();
 
         tokio::spawn(async move {
-            let result = handle_connection(stream, addr, maildir_path, domain, db, tls_config, filters_dir, filters_timeout_ms, gateway_url).await;
+            let result = handle_connection(
+                stream,
+                addr,
+                maildir_path,
+                domain,
+                db,
+                tls_config,
+                filters_dir,
+                filters_timeout_ms,
+                gateway_url,
+            )
+            .await;
             stats.connection_closed();
             if let Err(e) = result {
                 error!(addr = %addr, error = ?e, "Connection error");
@@ -140,10 +151,7 @@ async fn handle_connection(
                             domain
                         )
                     } else {
-                        format!(
-                            "250-{}\r\n250-8BITMIME\r\n250 SIZE 52428800\r\n",
-                            domain
-                        )
+                        format!("250-{}\r\n250-8BITMIME\r\n250 SIZE 52428800\r\n", domain)
                     }
                 } else {
                     format!("250 {}\r\n", domain)
@@ -190,7 +198,15 @@ async fn handle_connection(
                             headers: None,
                             body: None,
                         };
-                        match filters::run_filters(&session.filters_dir, HookPoint::MailFrom, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
+                        match filters::run_filters(
+                            &session.filters_dir,
+                            HookPoint::MailFrom,
+                            &ctx,
+                            session.filters_timeout_ms,
+                            session.gateway_url.as_deref(),
+                        )
+                        .await
+                        {
                             Ok(()) => {
                                 session.mail_from = Some(sender.clone());
                                 session.rcpt_to.clear();
@@ -235,7 +251,15 @@ async fn handle_connection(
                                 headers: None,
                                 body: None,
                             };
-                            match filters::run_filters(&session.filters_dir, HookPoint::RcptTo, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
+                            match filters::run_filters(
+                                &session.filters_dir,
+                                HookPoint::RcptTo,
+                                &ctx,
+                                session.filters_timeout_ms,
+                                session.gateway_url.as_deref(),
+                            )
+                            .await
+                            {
                                 Ok(()) => {
                                     session.rcpt_to.push(recipient_addr.clone());
                                     info!(addr = %addr, recipient = %recipient_addr, "RCPT TO accepted");
@@ -256,7 +280,8 @@ async fn handle_connection(
             }
             "DATA" => {
                 if session.mail_from.is_none() || session.rcpt_to.is_empty() {
-                    "503 Bad sequence of commands (need MAIL FROM and RCPT TO first)\r\n".to_string()
+                    "503 Bad sequence of commands (need MAIL FROM and RCPT TO first)\r\n"
+                        .to_string()
                 } else {
                     // SPF check
                     let sender_domain = extract_domain(session.mail_from.as_deref().unwrap_or(""));
@@ -269,14 +294,19 @@ async fn handle_connection(
                         "SPF check result"
                     );
 
-                    stream.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
+                    stream
+                        .write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n")
+                        .await?;
 
                     let message = read_message_body(&mut stream, &mut line).await;
 
                     // Run data filter hooks (pass full message)
                     let msg_str = String::from_utf8_lossy(&message).to_string();
                     let (headers, body) = match msg_str.find("\r\n\r\n") {
-                        Some(pos) => (Some(msg_str[..pos].to_string()), Some(msg_str[pos + 4..].to_string())),
+                        Some(pos) => (
+                            Some(msg_str[..pos].to_string()),
+                            Some(msg_str[pos + 4..].to_string()),
+                        ),
                         None => (Some(msg_str.clone()), None),
                     };
                     let ctx = FilterContext {
@@ -289,7 +319,15 @@ async fn handle_connection(
                         headers,
                         body,
                     };
-                    if let Err(reason) = filters::run_filters(&session.filters_dir, HookPoint::Data, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
+                    if let Err(reason) = filters::run_filters(
+                        &session.filters_dir,
+                        HookPoint::Data,
+                        &ctx,
+                        session.filters_timeout_ms,
+                        session.gateway_url.as_deref(),
+                    )
+                    .await
+                    {
                         warn!(addr = %addr, reason = %reason, "Message rejected by DATA filter");
                         session.mail_from = None;
                         session.rcpt_to.clear();
@@ -324,9 +362,7 @@ async fn handle_connection(
                 stream.write_all(b"221 Bye\r\n").await?;
                 break;
             }
-            "NOOP" => {
-                "250 OK\r\n".to_string()
-            }
+            "NOOP" => "250 OK\r\n".to_string(),
             _ => {
                 warn!(addr = %addr, verb = %verb, "Unknown command");
                 "500 Command not recognized\r\n".to_string()
@@ -397,7 +433,15 @@ async fn tls_session(
                             headers: None,
                             body: None,
                         };
-                        match filters::run_filters(&session.filters_dir, HookPoint::MailFrom, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
+                        match filters::run_filters(
+                            &session.filters_dir,
+                            HookPoint::MailFrom,
+                            &ctx,
+                            session.filters_timeout_ms,
+                            session.gateway_url.as_deref(),
+                        )
+                        .await
+                        {
                             Ok(()) => {
                                 session.mail_from = Some(sender.clone());
                                 session.rcpt_to.clear();
@@ -442,7 +486,15 @@ async fn tls_session(
                                 headers: None,
                                 body: None,
                             };
-                            match filters::run_filters(&session.filters_dir, HookPoint::RcptTo, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
+                            match filters::run_filters(
+                                &session.filters_dir,
+                                HookPoint::RcptTo,
+                                &ctx,
+                                session.filters_timeout_ms,
+                                session.gateway_url.as_deref(),
+                            )
+                            .await
+                            {
                                 Ok(()) => {
                                     session.rcpt_to.push(recipient_addr.clone());
                                     info!(addr = %addr, recipient = %recipient_addr, "RCPT TO accepted (TLS)");
@@ -463,7 +515,8 @@ async fn tls_session(
             }
             "DATA" => {
                 if session.mail_from.is_none() || session.rcpt_to.is_empty() {
-                    "503 Bad sequence of commands (need MAIL FROM and RCPT TO first)\r\n".to_string()
+                    "503 Bad sequence of commands (need MAIL FROM and RCPT TO first)\r\n"
+                        .to_string()
                 } else {
                     let sender_domain = extract_domain(session.mail_from.as_deref().unwrap_or(""));
                     let spf_result = check_spf(&sender_domain, session.sender_ip).await;
@@ -475,14 +528,19 @@ async fn tls_session(
                         "SPF check result (TLS)"
                     );
 
-                    tls_stream.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
+                    tls_stream
+                        .write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n")
+                        .await?;
 
                     let message = read_message_body(&mut tls_stream, line).await;
 
                     // Run data filter hooks (pass full message)
                     let msg_str = String::from_utf8_lossy(&message).to_string();
                     let (headers, body) = match msg_str.find("\r\n\r\n") {
-                        Some(pos) => (Some(msg_str[..pos].to_string()), Some(msg_str[pos + 4..].to_string())),
+                        Some(pos) => (
+                            Some(msg_str[..pos].to_string()),
+                            Some(msg_str[pos + 4..].to_string()),
+                        ),
                         None => (Some(msg_str.clone()), None),
                     };
                     let ctx = FilterContext {
@@ -495,7 +553,15 @@ async fn tls_session(
                         headers,
                         body,
                     };
-                    if let Err(reason) = filters::run_filters(&session.filters_dir, HookPoint::Data, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
+                    if let Err(reason) = filters::run_filters(
+                        &session.filters_dir,
+                        HookPoint::Data,
+                        &ctx,
+                        session.filters_timeout_ms,
+                        session.gateway_url.as_deref(),
+                    )
+                    .await
+                    {
                         warn!(addr = %addr, reason = %reason, "Message rejected by DATA filter (TLS)");
                         session.mail_from = None;
                         session.rcpt_to.clear();
@@ -530,9 +596,7 @@ async fn tls_session(
                 tls_stream.write_all(b"221 Bye\r\n").await?;
                 break;
             }
-            "NOOP" => {
-                "250 OK\r\n".to_string()
-            }
+            "NOOP" => "250 OK\r\n".to_string(),
             _ => {
                 warn!(addr = %addr, verb = %verb, "Unknown command");
                 "500 Command not recognized\r\n".to_string()
@@ -591,18 +655,12 @@ fn extract_address(input: &str) -> String {
 }
 
 fn extract_domain(addr: &str) -> String {
-    addr.split('@')
-        .nth(1)
-        .unwrap_or("")
-        .to_lowercase()
+    addr.split('@').nth(1).unwrap_or("").to_lowercase()
 }
 
 // ── DATA Body Reading ────────────────────────────────────────────
 
-async fn read_message_body(
-    reader: &mut (impl AsyncRead + Unpin),
-    line: &mut String,
-) -> Vec<u8> {
+async fn read_message_body(reader: &mut (impl AsyncRead + Unpin), line: &mut String) -> Vec<u8> {
     let mut body = Vec::new();
     let mut buf_reader = BufReader::new(reader);
 
@@ -650,7 +708,9 @@ async fn store_message(session: &SmtpSession, message: &[u8]) -> anyhow::Result<
         let rcpt_domain = recipient.split('@').nth(1).unwrap_or("");
 
         // For custom domains, route to the domain owner's mailbox
-        let mailbox_user = session.db.get_mailbox_user_for_domain(rcpt_domain, recipient)
+        let mailbox_user = session
+            .db
+            .get_mailbox_user_for_domain(rcpt_domain, recipient)
             .unwrap_or_else(|| local_part.to_string());
 
         let user_dir = std::path::Path::new(&session.maildir_path)
@@ -665,10 +725,7 @@ async fn store_message(session: &SmtpSession, message: &[u8]) -> anyhow::Result<
             .map(|h| h.to_string_lossy().to_string())
             .unwrap_or_else(|_| "localhost".to_string());
 
-        let filename = format!(
-            "{}.{}.{}:2,",
-            message_id, std::process::id(), hostname
-        );
+        let filename = format!("{}.{}.{}:2,", message_id, std::process::id(), hostname);
 
         let filepath = user_dir.join("new").join(&filename);
 

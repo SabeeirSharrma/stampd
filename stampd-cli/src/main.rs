@@ -1,5 +1,5 @@
-mod supervisor;
 mod config;
+mod supervisor;
 
 use anyhow::Result;
 use tracing::info;
@@ -9,8 +9,7 @@ async fn main() -> Result<()> {
     // Initialize tracing with service-aware formatting
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -18,7 +17,8 @@ async fn main() -> Result<()> {
 
     match args.get(1).map(|s| s.as_str()) {
         Some("up") => {
-            let only: Option<Vec<String>> = args.get(2)
+            let only: Option<Vec<String>> = args
+                .get(2)
                 .filter(|s| s.as_str() == "--only")
                 .and_then(|_| args.get(3))
                 .map(|s| s.split(',').map(|s| s.trim().to_string()).collect());

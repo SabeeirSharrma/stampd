@@ -4,12 +4,12 @@
 //! Keys stored in PKCS8 format in config directory.
 //! Use `openssl genrsa -out key.pem 2048 && openssl pkcs8 -topk8 -inform PEM -outform DER -in key.pem -out key.pkcs8 -nocrypt` to generate.
 
-use std::path::Path;
-use std::sync::Arc;
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use ring::digest;
 use ring::rsa::KeyPair;
+use std::path::Path;
+use std::sync::Arc;
 use tracing::info;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 /// DKIM signer that holds the current key pair.
 #[derive(Clone)]
@@ -36,8 +36,10 @@ impl DkimSigner {
                  openssl genrsa -out {}/{}.pem 2048\n\
                  openssl pkcs8 -topk8 -inform PEM -outform DER -in {}/{}.pem -out {} -nocrypt",
                 pkcs8_path.display(),
-                key_dir.display(), selector,
-                key_dir.display(), selector,
+                key_dir.display(),
+                selector,
+                key_dir.display(),
+                selector,
                 pkcs8_path.display()
             ));
         }
@@ -78,7 +80,10 @@ impl DkimSigner {
         let mut found_headers = Vec::new();
         for header_name in &signed_header_names {
             for line in headers.lines() {
-                if line.to_lowercase().starts_with(&format!("{}:", header_name)) {
+                if line
+                    .to_lowercase()
+                    .starts_with(&format!("{}:", header_name))
+                {
                     found_headers.push(header_name.to_string());
                     break;
                 }
@@ -135,7 +140,13 @@ impl DkimSigner {
         // Sign with RSA-SHA256
         let rng = ring::rand::SystemRandom::new();
         let mut signature = vec![0u8; self.key_pair.public().modulus_len()];
-        self.key_pair.sign(&ring::signature::RSA_PKCS1_SHA256, &rng, data_to_sign.as_bytes(), &mut signature)
+        self.key_pair
+            .sign(
+                &ring::signature::RSA_PKCS1_SHA256,
+                &rng,
+                data_to_sign.as_bytes(),
+                &mut signature,
+            )
             .map_err(|e| anyhow::anyhow!("DKIM signing failed: {:?}", e))?;
 
         let sig_b64 = BASE64.encode(&signature);
@@ -162,11 +173,18 @@ impl DkimSigner {
 }
 
 /// Get the DKIM public key record for DNS setup.
-pub fn get_dkim_dns_record(_domain: &str, selector: &str, key_dir: &Path) -> anyhow::Result<String> {
+pub fn get_dkim_dns_record(
+    _domain: &str,
+    selector: &str,
+    key_dir: &Path,
+) -> anyhow::Result<String> {
     let dns_path = key_dir.join(format!("{}.dns.txt", selector));
     if dns_path.exists() {
         Ok(std::fs::read_to_string(dns_path)?)
     } else {
-        Err(anyhow::anyhow!("DKIM key not found for selector {}", selector))
+        Err(anyhow::anyhow!(
+            "DKIM key not found for selector {}",
+            selector
+        ))
     }
 }

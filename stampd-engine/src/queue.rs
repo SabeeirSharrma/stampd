@@ -1,8 +1,8 @@
-use tracing::{info, warn};
-use std::sync::Arc;
-use std::path::Path;
 use crate::db::Database;
 use crate::delivery;
+use std::path::Path;
+use std::sync::Arc;
+use tracing::{info, warn};
 
 const MAX_ATTEMPTS: i32 = 5;
 
@@ -32,7 +32,8 @@ pub async fn run(db: Arc<Database>, _maildir_path: String) -> anyhow::Result<()>
                         Ok(m) => m,
                         Err(e) => {
                             warn!(id, error = ?e, "Failed to read message file");
-                            let _ = db.mark_failed(*id, &format!("Read error: {}", e), MAX_ATTEMPTS);
+                            let _ =
+                                db.mark_failed(*id, &format!("Read error: {}", e), MAX_ATTEMPTS);
                             continue;
                         }
                     };

@@ -5,8 +5,8 @@
 
 use napi_derive::napi;
 use rusqlite::Connection;
-use std::sync::{Arc, Mutex};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 /// Database wrapper for napi.
 #[napi]
@@ -34,26 +34,34 @@ impl StampdDb {
     /// Get queue statistics (pending, delivered, dead).
     #[napi]
     pub fn queue_stats(&self) -> napi::Result<QueueStats> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
 
-        let pending: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM outbox WHERE status = 'pending'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(0);
+        let pending: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM outbox WHERE status = 'pending'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
-        let delivered: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM outbox WHERE status = 'delivered'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(0);
+        let delivered: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM outbox WHERE status = 'delivered'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
-        let dead: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM outbox WHERE status = 'dead'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or(0);
+        let dead: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM outbox WHERE status = 'dead'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
         Ok(QueueStats {
             pending: pending as u32,
@@ -65,7 +73,9 @@ impl StampdDb {
     /// Get server configuration.
     #[napi]
     pub fn get_config(&self) -> napi::Result<ServerConfig> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
 
         let result: Result<(String, bool, String), _> = conn.query_row(
@@ -82,23 +92,30 @@ impl StampdDb {
         );
 
         // Simpler approach: query each key separately
-        let domain: String = conn.query_row(
-            "SELECT value FROM server_config WHERE key = 'domain'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or_else(|_| "localhost".to_string());
+        let domain: String = conn
+            .query_row(
+                "SELECT value FROM server_config WHERE key = 'domain'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "localhost".to_string());
 
-        let signup_enabled: bool = conn.query_row(
-            "SELECT value FROM server_config WHERE key = 'signup_enabled'",
-            [],
-            |row| row.get::<_, String>(0),
-        ).map(|v| v == "true").unwrap_or(true);
+        let signup_enabled: bool = conn
+            .query_row(
+                "SELECT value FROM server_config WHERE key = 'signup_enabled'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .map(|v| v == "true")
+            .unwrap_or(true);
 
-        let dkim_selector: String = conn.query_row(
-            "SELECT value FROM server_config WHERE key = 'dkim_selector'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or_else(|_| "default".to_string());
+        let dkim_selector: String = conn
+            .query_row(
+                "SELECT value FROM server_config WHERE key = 'dkim_selector'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "default".to_string());
 
         Ok(ServerConfig {
             domain,
@@ -110,26 +127,32 @@ impl StampdDb {
     /// Check if a domain is allowed (configured domain or verified custom domain).
     #[napi]
     pub fn is_domain_allowed(&self, domain: String) -> napi::Result<bool> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
 
         // Check configured domain
-        let config_domain: String = conn.query_row(
-            "SELECT value FROM server_config WHERE key = 'domain'",
-            [],
-            |row| row.get(0),
-        ).unwrap_or_else(|_| "localhost".to_string());
+        let config_domain: String = conn
+            .query_row(
+                "SELECT value FROM server_config WHERE key = 'domain'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|_| "localhost".to_string());
 
         if domain.to_lowercase() == config_domain.to_lowercase() {
             return Ok(true);
         }
 
         // Check custom domains
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM custom_domains WHERE domain = ? AND verified = 1",
-            [domain.to_lowercase()],
-            |row| row.get(0),
-        ).unwrap_or(0);
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM custom_domains WHERE domain = ? AND verified = 1",
+                [domain.to_lowercase()],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
 
         Ok(count > 0)
     }
@@ -137,7 +160,9 @@ impl StampdDb {
     /// Get the owner of a custom domain.
     #[napi]
     pub fn get_domain_owner(&self, domain: String) -> napi::Result<Option<String>> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
 
         let result: Result<String, _> = conn.query_row(
@@ -157,26 +182,31 @@ impl StampdDb {
     /// List all custom domains for a user.
     #[napi]
     pub fn list_custom_domains(&self, user_id: i64) -> napi::Result<Vec<CustomDomain>> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
 
-        let mut stmt = conn.prepare(
-            "SELECT id, domain, user_id, verified, created_at \
-             FROM custom_domains WHERE user_id = ? ORDER BY id"
-        ).map_err(|e| napi::Error::from_reason(format!("Prepare error: {}", e)))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, domain, user_id, verified, created_at \
+             FROM custom_domains WHERE user_id = ? ORDER BY id",
+            )
+            .map_err(|e| napi::Error::from_reason(format!("Prepare error: {}", e)))?;
 
-        let domains = stmt.query_map([user_id], |row| {
-            Ok(CustomDomain {
-                id: row.get(0)?,
-                domain: row.get(1)?,
-                user_id: row.get(2)?,
-                verified: row.get(3)?,
-                created_at: row.get(4)?,
+        let domains = stmt
+            .query_map([user_id], |row| {
+                Ok(CustomDomain {
+                    id: row.get(0)?,
+                    domain: row.get(1)?,
+                    user_id: row.get(2)?,
+                    verified: row.get(3)?,
+                    created_at: row.get(4)?,
+                })
             })
-        })
-        .map_err(|e| napi::Error::from_reason(format!("Query error: {}", e)))?
-        .filter_map(|r| r.ok())
-        .collect();
+            .map_err(|e| napi::Error::from_reason(format!("Query error: {}", e)))?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok(domains)
     }
@@ -184,7 +214,9 @@ impl StampdDb {
     /// Get user by ID.
     #[napi]
     pub fn get_user(&self, user_id: i64) -> napi::Result<Option<User>> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
 
         let result: Result<User, _> = conn.query_row(

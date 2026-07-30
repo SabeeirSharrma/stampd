@@ -117,10 +117,7 @@ impl Database {
     }
 
     /// Get a user by email. Returns (id, password_hash, is_admin, disabled).
-    pub fn get_user_by_email(
-        &self,
-        email: &str,
-    ) -> SqlResult<Option<(i64, String, bool, bool)>> {
+    pub fn get_user_by_email(&self, email: &str) -> SqlResult<Option<(i64, String, bool, bool)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, password_hash, is_admin, disabled_at IS NOT NULL FROM users WHERE email = ?1",
@@ -141,9 +138,8 @@ impl Database {
     /// Get a user by id. Returns (email, is_admin, disabled).
     pub fn get_user_by_id(&self, id: i64) -> SqlResult<Option<(String, bool, bool)>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT email, is_admin, disabled_at IS NOT NULL FROM users WHERE id = ?1",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT email, is_admin, disabled_at IS NOT NULL FROM users WHERE id = ?1")?;
         let mut rows = stmt.query([id])?;
         if let Some(row) = rows.next()? {
             Ok(Some((
@@ -235,9 +231,7 @@ impl Database {
     }
 
     /// List all tokens (admin view). Returns (id, user_id, label, scope, created_at, revoked).
-    pub fn list_all_tokens(
-        &self,
-    ) -> SqlResult<Vec<(i64, i64, String, String, i64, bool)>> {
+    pub fn list_all_tokens(&self) -> SqlResult<Vec<(i64, i64, String, String, i64, bool)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, user_id, label, scope, created_at, revoked_at IS NOT NULL
@@ -305,9 +299,8 @@ impl Database {
     pub fn validate_session(&self, session_id: &str) -> SqlResult<Option<i64>> {
         let conn = self.conn.lock().unwrap();
         let now_ts = now();
-        let mut stmt = conn.prepare(
-            "SELECT user_id FROM sessions WHERE id = ?1 AND expires_at > ?2",
-        )?;
+        let mut stmt =
+            conn.prepare("SELECT user_id FROM sessions WHERE id = ?1 AND expires_at > ?2")?;
         let mut rows = stmt.query(rusqlite::params![session_id, now_ts])?;
         if let Some(row) = rows.next()? {
             Ok(Some(row.get(0)?))
@@ -483,7 +476,10 @@ impl Database {
     }
 
     /// Get recent delivery logs.
-    pub fn get_delivery_logs(&self, limit: i64) -> SqlResult<Vec<(i64, i64, String, String, Option<String>, i64)>> {
+    pub fn get_delivery_logs(
+        &self,
+        limit: i64,
+    ) -> SqlResult<Vec<(i64, i64, String, String, Option<String>, i64)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
             "SELECT id, queue_id, status, recipient, error, created_at
@@ -579,11 +575,9 @@ impl Database {
         let conn = self.conn.lock().unwrap();
         // Check configured domain
         let configured: String = conn
-            .query_row(
-                "SELECT domain FROM server_config WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT domain FROM server_config WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .unwrap_or_default();
         if domain.eq_ignore_ascii_case(&configured) {
             return true;
@@ -612,15 +606,17 @@ impl Database {
 
     /// Get the local part (username) for a domain+email combo.
     /// For custom domains, the user's email local part is used.
-    pub fn get_mailbox_user_for_domain(&self, domain: &str, recipient_email: &str) -> Option<String> {
+    pub fn get_mailbox_user_for_domain(
+        &self,
+        domain: &str,
+        recipient_email: &str,
+    ) -> Option<String> {
         let local_part = recipient_email.split('@').next()?.to_string();
         let config_domain: String = {
             let conn = self.conn.lock().unwrap();
-            conn.query_row(
-                "SELECT domain FROM server_config WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
+            conn.query_row("SELECT domain FROM server_config WHERE id = 1", [], |row| {
+                row.get(0)
+            })
             .unwrap_or_default()
         };
         if domain.eq_ignore_ascii_case(&config_domain) {
@@ -630,11 +626,9 @@ impl Database {
         let owner_id = self.get_domain_owner(domain)?;
         let conn = self.conn.lock().unwrap();
         let email: String = conn
-            .query_row(
-                "SELECT email FROM users WHERE id = ?1",
-                [owner_id],
-                |row| row.get(0),
-            )
+            .query_row("SELECT email FROM users WHERE id = ?1", [owner_id], |row| {
+                row.get(0)
+            })
             .ok()?;
         Some(email.split('@').next()?.to_string())
     }
@@ -669,10 +663,7 @@ impl Database {
     /// Verify a custom domain (admin action or DNS check).
     pub fn verify_custom_domain(&self, id: i64) -> SqlResult<bool> {
         let conn = self.conn.lock().unwrap();
-        let rows = conn.execute(
-            "UPDATE custom_domains SET verified = 1 WHERE id = ?1",
-            [id],
-        )?;
+        let rows = conn.execute("UPDATE custom_domains SET verified = 1 WHERE id = ?1", [id])?;
         Ok(rows > 0)
     }
 
@@ -689,9 +680,7 @@ impl Database {
         let mut stmt = conn
             .prepare("SELECT domain FROM custom_domains WHERE verified = 1")
             .unwrap();
-        let rows = stmt
-            .query_map([], |row| row.get(0))
-            .unwrap();
+        let rows = stmt.query_map([], |row| row.get(0)).unwrap();
         rows.filter_map(|r| r.ok()).collect()
     }
 }

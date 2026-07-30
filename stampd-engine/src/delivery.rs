@@ -3,10 +3,10 @@
 //! MX lookup → connect → EHLO → STARTTLS (if available) → MAIL/RCPT/DATA → disconnect.
 //! Handles 2xx/4xx/5xx responses.
 
-use tokio::net::TcpStream;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tracing::{info, warn};
 use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::TcpStream;
+use tracing::{info, warn};
 
 /// Result of an outbound delivery attempt.
 #[derive(Debug)]
@@ -24,16 +24,12 @@ pub enum DeliveryResult {
 /// `from` — sender address (e.g. "user@stampd.com")
 /// `to` — recipient address (e.g. "friend@gmail.com")
 /// `message` — full .eml content including headers
-pub async fn deliver(
-    from: &str,
-    to: &str,
-    message: &[u8],
-) -> DeliveryResult {
+pub async fn deliver(from: &str, to: &str, message: &[u8]) -> DeliveryResult {
     let recipient_domain = match to.split('@').nth(1) {
         Some(d) => d,
         None => {
             return DeliveryResult::PermanentFailure(
-                "Invalid recipient address (no domain)".to_string()
+                "Invalid recipient address (no domain)".to_string(),
             );
         }
     };
@@ -42,14 +38,13 @@ pub async fn deliver(
     let mx_hosts = match lookup_mx(recipient_domain).await {
         Ok(hosts) if !hosts.is_empty() => hosts,
         Ok(_) => {
-            return DeliveryResult::PermanentFailure(
-                format!("No MX records for {}", recipient_domain)
-            );
+            return DeliveryResult::PermanentFailure(format!(
+                "No MX records for {}",
+                recipient_domain
+            ));
         }
         Err(e) => {
-            return DeliveryResult::TemporaryFailure(
-                format!("MX lookup failed: {}", e)
-            );
+            return DeliveryResult::TemporaryFailure(format!("MX lookup failed: {}", e));
         }
     };
 
@@ -69,28 +64,21 @@ pub async fn deliver(
         }
     }
 
-    DeliveryResult::TemporaryFailure(
-        format!("All MX servers for {} rejected the message", recipient_domain)
-    )
+    DeliveryResult::TemporaryFailure(format!(
+        "All MX servers for {} rejected the message",
+        recipient_domain
+    ))
 }
 
 /// Try delivery to a specific MX host.
-async fn try_deliver(
-    mx_host: &str,
-    from: &str,
-    to: &str,
-    message: &[u8],
-) -> Result<(), String> {
+async fn try_deliver(mx_host: &str, from: &str, to: &str, message: &[u8]) -> Result<(), String> {
     let addr = format!("{}:25", mx_host);
 
     // Connect with timeout
-    let stream = tokio::time::timeout(
-        Duration::from_secs(10),
-        TcpStream::connect(&addr),
-    )
-    .await
-    .map_err(|_| format!("Connection to {} timed out", mx_host))?
-    .map_err(|e| format!("Connection to {} failed: {}", mx_host, e))?;
+    let stream = tokio::time::timeout(Duration::from_secs(10), TcpStream::connect(&addr))
+        .await
+        .map_err(|_| format!("Connection to {} timed out", mx_host))?
+        .map_err(|e| format!("Connection to {} failed: {}", mx_host, e))?;
 
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -98,7 +86,9 @@ async fn try_deliver(
 
     // Read greeting
     line.clear();
-    reader.read_line(&mut line).await
+    reader
+        .read_line(&mut line)
+        .await
         .map_err(|e| format!("Read greeting: {}", e))?;
     if !line.starts_with("2") {
         return Err(format!("Bad greeting: {}", line.trim()));
@@ -110,7 +100,14 @@ async fn try_deliver(
         .map(|h| h.to_string_lossy().to_string())
         .unwrap_or_else(|_| "localhost".to_string());
 
-    send_cmd(&mut writer, &mut reader, &mut line, &format!("EHLO {}", hostname), "EHLO").await?;
+    send_cmd(
+        &mut writer,
+        &mut reader,
+        &mut line,
+        &format!("EHLO {}", hostname),
+        "EHLO",
+    )
+    .await?;
 
     // Try STARTTLS (best-effort)
     let tls_active = try_starttls(&mut writer, &mut reader, &mut line).await;
@@ -123,10 +120,24 @@ async fn try_deliver(
     }
 
     // MAIL FROM
-    send_cmd(&mut writer, &mut reader, &mut line, &format!("MAIL FROM:<{}>", from), "MAIL FROM").await?;
+    send_cmd(
+        &mut writer,
+        &mut reader,
+        &mut line,
+        &format!("MAIL FROM:<{}>", from),
+        "MAIL FROM",
+    )
+    .await?;
 
     // RCPT TO
-    send_cmd(&mut writer, &mut reader, &mut line, &format!("RCPT TO:<{}>", to), "RCPT TO").await?;
+    send_cmd(
+        &mut writer,
+        &mut reader,
+        &mut line,
+        &format!("RCPT TO:<{}>", to),
+        "RCPT TO",
+    )
+    .await?;
 
     // DATA
     send_cmd(&mut writer, &mut reader, &mut line, "DATA", "DATA").await?;
@@ -143,17 +154,23 @@ async fn try_deliver(
         }
         out_line.push(b'\r');
         out_line.push(b'\n');
-        writer.write_all(&out_line).await
+        writer
+            .write_all(&out_line)
+            .await
             .map_err(|e| format!("Write message line: {}", e))?;
     }
 
     // Terminating dot
-    writer.write_all(b".\r\n").await
+    writer
+        .write_all(b".\r\n")
+        .await
         .map_err(|e| format!("Write terminator: {}", e))?;
 
     // Read DATA response
     line.clear();
-    reader.read_line(&mut line).await
+    reader
+        .read_line(&mut line)
+        .await
         .map_err(|e| format!("Read DATA response: {}", e))?;
     if !line.starts_with("2") {
         return Err(format!("DATA rejected: {}", line.trim()));
@@ -173,11 +190,15 @@ async fn send_cmd(
     cmd: &str,
     context: &str,
 ) -> Result<(), String> {
-    writer.write_all(format!("{}\r\n", cmd).as_bytes()).await
+    writer
+        .write_all(format!("{}\r\n", cmd).as_bytes())
+        .await
         .map_err(|e| format!("Write {}: {}", context, e))?;
 
     line.clear();
-    reader.read_line(line).await
+    reader
+        .read_line(line)
+        .await
         .map_err(|e| format!("Read {}: {}", context, e))?;
 
     let trimmed = line.trim();
@@ -219,31 +240,41 @@ async fn try_starttls(
 ///
 /// Returns MX hosts sorted by priority (lowest first).
 async fn lookup_mx(domain: &str) -> Result<Vec<String>, String> {
-    use trust_dns_resolver::TokioAsyncResolver;
     use trust_dns_resolver::config::*;
+    use trust_dns_resolver::TokioAsyncResolver;
 
     let resolver = TokioAsyncResolver::tokio_from_system_conf()
         .map_err(|e| format!("Failed to create DNS resolver: {}", e))?;
 
     // Query MX records
-    let mx_response = resolver.mx_lookup(domain)
+    let mx_response = resolver
+        .mx_lookup(domain)
         .await
         .map_err(|e| format!("MX lookup failed: {}", e))?;
 
     // Sort by priority (lowest first)
-    let mut mx_records: Vec<(u16, String)> = mx_response.iter()
-        .map(|mx| (mx.preference(), mx.exchange().to_string().trim_end_matches('.').to_string()))
+    let mut mx_records: Vec<(u16, String)> = mx_response
+        .iter()
+        .map(|mx| {
+            (
+                mx.preference(),
+                mx.exchange().to_string().trim_end_matches('.').to_string(),
+            )
+        })
         .collect();
 
     mx_records.sort_by_key(|(preference, _)| *preference);
 
-    let mx_hosts: Vec<String> = mx_records.into_iter()
+    let mx_hosts: Vec<String> = mx_records
+        .into_iter()
         .map(|(_, exchange)| exchange)
         .collect();
 
     if mx_hosts.is_empty() {
         // Fallback: try A/AAAA record of the domain itself
-        let addrs = resolver.lookup_ip(domain).await
+        let addrs = resolver
+            .lookup_ip(domain)
+            .await
             .map_err(|e| format!("IP lookup failed: {}", e))?;
 
         if addrs.iter().next().is_some() {

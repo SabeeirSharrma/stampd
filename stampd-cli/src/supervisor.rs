@@ -1,10 +1,10 @@
+use crate::config::ServiceConfig;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use tokio::process::{Command, Child};
+use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
-use tracing::{info, warn, error};
-use crate::config::ServiceConfig;
+use tracing::{error, info, warn};
 
 const MAX_RESTART_ATTEMPTS: u32 = 10;
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);

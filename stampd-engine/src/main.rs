@@ -1,11 +1,10 @@
 use std::path::PathBuf;
-use tracing::{info, error};
+use tracing::{error, info};
 
 // Use the engine library for all modules
 use stampd_engine::{
-    config::Config,
-    smtpd, submissiond, maildir, queue, db, delivery, api, tls, spf, dkim, filters, stats, transit,
-    ENGINE_STATS, ENGINE_DB,
+    api, config::Config, db, delivery, dkim, filters, maildir, queue, smtpd, spf, stats,
+    submissiond, tls, transit, ENGINE_DB, ENGINE_STATS,
 };
 use std::sync::Arc;
 
@@ -14,8 +13,7 @@ async fn main() -> anyhow::Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info".into()),
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
         )
         .init();
 
@@ -35,7 +33,9 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&config.engine.filters_dir)?;
 
     // Initialize database
-    let database = Arc::new(db::Database::open(std::path::Path::new(&config.engine.db_path))?);
+    let database = Arc::new(db::Database::open(std::path::Path::new(
+        &config.engine.db_path,
+    ))?);
     info!(path = %config.engine.db_path, "Database initialized");
 
     // Set global database handle for napi exports
@@ -67,8 +67,16 @@ async fn main() -> anyhow::Result<()> {
 
     // Load TLS config for STARTTLS
     let tls_config = tls::try_load(
-        config.engine.tls_cert_path.as_ref().map(std::path::Path::new),
-        config.engine.tls_key_path.as_ref().map(std::path::Path::new),
+        config
+            .engine
+            .tls_cert_path
+            .as_ref()
+            .map(std::path::Path::new),
+        config
+            .engine
+            .tls_key_path
+            .as_ref()
+            .map(std::path::Path::new),
     );
 
     // Initialize DKIM signer

@@ -1,6 +1,6 @@
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 use tracing::info;
-use anyhow::Result;
 
 /// Initialize Maildir structure for all users
 pub async fn init(maildir_path: &str) -> Result<()> {

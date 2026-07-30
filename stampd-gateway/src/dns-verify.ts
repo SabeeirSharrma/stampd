@@ -50,7 +50,7 @@ export async function verifyDns(
       .flat()
       .filter(r => r.startsWith('v=spf1'));
     result.spf.records = spfRecords;
-    result.spf.valid = spfRecords.length > 0 && spfRecords[0].includes(serverIp);
+    result.spf.valid = spfRecords.length > 0 && (spfRecords[0]?.includes(serverIp) ?? false);
   } catch (err: any) {
     result.spf.error = err.code === 'ENODATA' ? 'No TXT records found' : err.message;
   }

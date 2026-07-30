@@ -4,10 +4,10 @@
 //! Binds to 127.0.0.1 only — not publicly exposed.
 
 use axum::{routing::get, Json, Router};
+use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tracing::info;
-use serde_json::{json, Value};
 
 use crate::db::Database;
 use crate::stats::EngineStats;

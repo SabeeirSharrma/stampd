@@ -8,13 +8,13 @@
 //! Body: { "hook": "mail_from"|"rcpt_to"|"data", "context": {...}, "filters": [...] }
 //! Response: { "ok": true } or { "ok": false, "reason": "..." }
 
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
-use tracing::{info, warn, error};
-use serde::{Deserialize, Serialize};
+use tracing::{error, info, warn};
 
 /// Which SMTP hook point a filter handles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,8 +100,8 @@ async fn run_filters_via_transit(
     filters_dir: &Path,
 ) -> Result<(), String> {
     // Load filter configs to get enabled filter function names
-    let filters = load_filters(filters_dir)
-        .map_err(|e| format!("Failed to load filters: {}", e))?;
+    let filters =
+        load_filters(filters_dir).map_err(|e| format!("Failed to load filters: {}", e))?;
 
     let hook_name = match hook {
         HookPoint::MailFrom => "mail_from",
@@ -138,8 +138,8 @@ async fn run_filters_via_transit(
         return Ok(()); // No filters for this hook
     }
 
-    let context_json = serde_json::to_value(context)
-        .map_err(|e| format!("Failed to serialize context: {}", e))?;
+    let context_json =
+        serde_json::to_value(context).map_err(|e| format!("Failed to serialize context: {}", e))?;
 
     let request_body = serde_json::json!({
         "hook": hook_name,
@@ -172,7 +172,8 @@ async fn run_filters_via_transit(
     }
 
     if body.get("ok").and_then(|v| v.as_bool()) == Some(false) {
-        let reason = body.get("reason")
+        let reason = body
+            .get("reason")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
         return Err(reason.to_string());
@@ -192,8 +193,8 @@ async fn run_filters_via_scripts(
         return Ok(()); // No filters directory
     }
 
-    let filters = load_filters(filters_dir)
-        .map_err(|e| format!("Failed to load filters: {}", e))?;
+    let filters =
+        load_filters(filters_dir).map_err(|e| format!("Failed to load filters: {}", e))?;
 
     for filter in &filters {
         if !filter.enabled {
@@ -259,7 +260,9 @@ fn load_filters(filters_dir: &Path) -> anyhow::Result<Vec<Filter>> {
                 if let Ok(content) = std::fs::read_to_string(&config_path) {
                     if let Ok(config) = toml::from_str::<FilterConfig>(&content) {
                         filters.push(Filter {
-                            name: config.name.unwrap_or_else(|| dir.file_name().unwrap().to_string_lossy().to_string()),
+                            name: config.name.unwrap_or_else(|| {
+                                dir.file_name().unwrap().to_string_lossy().to_string()
+                            }),
                             path: dir,
                             hooks: config.hooks,
                             enabled: config.enabled.unwrap_or(true),
@@ -296,10 +299,22 @@ async fn run_filter_script(
 
     let ext = script.extension().and_then(|e| e.to_str()).unwrap_or("");
     let (program, args) = match ext {
-        "py" => ("python3".to_string(), vec![script.to_string_lossy().to_string()]),
-        "sh" => ("bash".to_string(), vec![script.to_string_lossy().to_string()]),
-        "js" => ("node".to_string(), vec![script.to_string_lossy().to_string()]),
-        "ts" => ("bun".to_string(), vec!["run".to_string(), script.to_string_lossy().to_string()]),
+        "py" => (
+            "python3".to_string(),
+            vec![script.to_string_lossy().to_string()],
+        ),
+        "sh" => (
+            "bash".to_string(),
+            vec![script.to_string_lossy().to_string()],
+        ),
+        "js" => (
+            "node".to_string(),
+            vec![script.to_string_lossy().to_string()],
+        ),
+        "ts" => (
+            "bun".to_string(),
+            vec!["run".to_string(), script.to_string_lossy().to_string()],
+        ),
         _ => {
             // Try as executable directly
             return run_executable(script, &json, timeout_ms).await;
@@ -317,20 +332,21 @@ async fn run_filter_script(
 
     // Write context to stdin
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(json.as_bytes()).await
+        stdin
+            .write_all(json.as_bytes())
+            .await
             .map_err(|e| format!("Failed to write to stdin: {}", e))?;
-        stdin.shutdown().await
+        stdin
+            .shutdown()
+            .await
             .map_err(|e| format!("Failed to close stdin: {}", e))?;
     }
 
     // Wait with timeout
-    let output = tokio::time::timeout(
-        Duration::from_millis(timeout_ms),
-        child.wait_with_output(),
-    )
-    .await
-    .map_err(|_| format!("Filter timed out after {}ms", timeout_ms))?
-    .map_err(|e| format!("Failed to wait for filter: {}", e))?;
+    let output = tokio::time::timeout(Duration::from_millis(timeout_ms), child.wait_with_output())
+        .await
+        .map_err(|_| format!("Filter timed out after {}ms", timeout_ms))?
+        .map_err(|e| format!("Failed to wait for filter: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -359,19 +375,20 @@ async fn run_executable(
         .map_err(|e| format!("Failed to spawn {}: {}", script.display(), e))?;
 
     if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(json.as_bytes()).await
+        stdin
+            .write_all(json.as_bytes())
+            .await
             .map_err(|e| format!("Failed to write to stdin: {}", e))?;
-        stdin.shutdown().await
+        stdin
+            .shutdown()
+            .await
             .map_err(|e| format!("Failed to close stdin: {}", e))?;
     }
 
-    let output = tokio::time::timeout(
-        Duration::from_millis(timeout_ms),
-        child.wait_with_output(),
-    )
-    .await
-    .map_err(|_| format!("Filter timed out after {}ms", timeout_ms))?
-    .map_err(|e| format!("Failed to wait for filter: {}", e))?;
+    let output = tokio::time::timeout(Duration::from_millis(timeout_ms), child.wait_with_output())
+        .await
+        .map_err(|_| format!("Filter timed out after {}ms", timeout_ms))?
+        .map_err(|e| format!("Failed to wait for filter: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
