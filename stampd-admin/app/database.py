@@ -303,11 +303,13 @@ async def list_custom_domains(user_id: int | None = None):
 
 async def add_custom_domain(user_id: int, domain: str) -> tuple[int, str]:
     """Add a custom domain. Returns (domain_id, verification_token)."""
+    import time
     token = f"stampd-verify-{secrets.token_hex(16)}"
+    now = int(time.time())
     async with get_db() as db:
         cursor = await db.execute(
-            "INSERT INTO custom_domains (user_id, domain, verified, verification_token) VALUES (?, ?, 0, ?)",
-            (user_id, domain.lower(), token),
+            "INSERT INTO custom_domains (user_id, domain, verified, verification_token, created_at) VALUES (?, ?, 0, ?, ?)",
+            (user_id, domain.lower(), token, now),
         )
         await db.commit()
         return cursor.lastrowid, token

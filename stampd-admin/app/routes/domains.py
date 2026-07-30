@@ -8,6 +8,24 @@ from .. import database as db
 
 router = APIRouter(prefix="/admin/domains", tags=["domains"])
 
+# Use reliable public nameservers to avoid system cache issues
+_NAMESERVERS = ["1.1.1.1", "8.8.8.8"]
+
+
+def _resolve_txt(name: str) -> str | None:
+    """Resolve a TXT record using external nameservers."""
+    for ns in _NAMESERVERS:
+        try:
+            resolver = dns.resolver.Resolver()
+            resolver.nameservers = [ns]
+            resolver.lifetime = 5
+            answers = resolver.resolve(name, "TXT")
+            for rdata in answers:
+                return b"".join(rdata.strings).decode("utf-8").strip()
+        except Exception:
+            continue
+    return None
+
 
 class DomainCreate(BaseModel):
     domain: str
@@ -64,22 +82,11 @@ async def verify_domain(body: DomainVerify):
         raise HTTPException(status_code=500, detail="No verification token found for this domain")
 
     txt_name = f"_stampd-challenge.{domain['domain']}"
+    txt_value = _resolve_txt(txt_name)
 
-    try:
-        answers = dns.resolver.resolve(txt_name, "TXT")
-        for rdata in answers:
-            txt_value = b"".join(rdata.strings).decode("utf-8").strip()
-            if txt_value == token:
-                await db.verify_custom_domain(body.id)
-                return {"ok": True, "verified": True}
-    except dns.resolver.NXDOMAIN:
-        pass
-    except dns.resolver.NoAnswer:
-        pass
-    except dns.resolver.NoNameservers:
-        pass
-    except dns.exception.DNSException:
-        pass
+    if txt_value and txt_value == token:
+        await db.verify_custom_domain(body.id)
+        return {"ok": True, "verified": True}
 
     return {
         "ok": False,

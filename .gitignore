@@ -45,3 +45,4 @@ Thumbs.db
 /maildir/
 stampd-admin/stampd_admin.egg-info/
 __pycache__/
+data/
