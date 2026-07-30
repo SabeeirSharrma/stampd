@@ -5,7 +5,6 @@
 
 use napi_derive::napi;
 use rusqlite::Connection;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 /// Database wrapper for napi.
@@ -78,20 +77,7 @@ impl StampdDb {
             .lock()
             .map_err(|e| napi::Error::from_reason(format!("Lock error: {}", e)))?;
 
-        let result: Result<(String, bool, String), _> = conn.query_row(
-            "SELECT value FROM server_config WHERE key = 'domain' UNION ALL \
-             SELECT value FROM server_config WHERE key = 'signup_enabled' UNION ALL \
-             SELECT value FROM server_config WHERE key = 'dkim_selector'",
-            [],
-            |row| {
-                let domain: String = row.get(0)?;
-                let signup: String = row.get(0)?;
-                let dkim: String = row.get(0)?;
-                Ok((domain, signup == "true", dkim))
-            },
-        );
-
-        // Simpler approach: query each key separately
+        // Query each key separately
         let domain: String = conn
             .query_row(
                 "SELECT value FROM server_config WHERE key = 'domain'",

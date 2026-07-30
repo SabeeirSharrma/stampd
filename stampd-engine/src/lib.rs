@@ -3,7 +3,7 @@
 //! This library is used by Transit for cross-language function calls.
 //! The binary (main.rs) is the standalone SMTP server.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, OnceLock};
 
 pub mod api;

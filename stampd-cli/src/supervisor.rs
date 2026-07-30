@@ -1,6 +1,6 @@
 use crate::config::ServiceConfig;
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
@@ -9,7 +9,6 @@ use tracing::{error, info, warn};
 const MAX_RESTART_ATTEMPTS: u32 = 10;
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
-const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct Supervisor {

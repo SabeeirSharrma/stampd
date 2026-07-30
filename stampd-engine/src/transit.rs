@@ -11,6 +11,7 @@ use serde_json::json;
 #[napi]
 pub fn get_queue_status() -> String {
     use std::sync::OnceLock;
+    #[allow(dead_code)]
     static DB: OnceLock<std::sync::Arc<crate::db::Database>> = OnceLock::new();
 
     // Try to get the global database handle

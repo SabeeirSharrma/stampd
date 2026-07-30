@@ -34,6 +34,7 @@ struct SmtpSession {
     tls_active: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     port: u16,
     maildir_path: String,
@@ -84,6 +85,7 @@ pub async fn run(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_connection(
     mut stream: tokio::net::TcpStream,
     addr: SocketAddr,

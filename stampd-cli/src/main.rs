@@ -179,7 +179,7 @@ async fn cmd_logs(service: Option<&str>) -> Result<()> {
             if log_dir.exists() {
                 for entry in std::fs::read_dir(&log_dir)? {
                     let entry = entry?;
-                    if entry.path().extension().map_or(false, |e| e == "log") {
+                    if entry.path().extension().is_some_and(|e| e == "log") {
                         println!("  {}", entry.path().display());
                     }
                 }

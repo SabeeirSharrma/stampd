@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct StampdConfig {
     pub engine: Option<EngineSection>,
     pub gateway: Option<ServiceSection>,
@@ -10,6 +11,7 @@ pub struct StampdConfig {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct EngineSection {
     #[serde(default = "default_smtp_port")]
     pub smtp_port: u16,
@@ -22,6 +24,7 @@ pub struct EngineSection {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct ServiceSection {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -30,6 +33,7 @@ pub struct ServiceSection {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct FiltersSection {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -74,9 +78,9 @@ impl StampdConfig {
                 .unwrap_or_else(|| {
                     match name {
                         "engine" => true, // Engine is always enabled if present
-                        "gateway" => self.gateway.as_ref().map_or(false, |g| g.enabled),
-                        "admin" => self.admin.as_ref().map_or(false, |a| a.enabled),
-                        "web" => self.web.as_ref().map_or(false, |w| w.enabled),
+                        "gateway" => self.gateway.as_ref().is_some_and(|g| g.enabled),
+                        "admin" => self.admin.as_ref().is_some_and(|a| a.enabled),
+                        "web" => self.web.as_ref().is_some_and(|w| w.enabled),
                         _ => false,
                     }
                 })

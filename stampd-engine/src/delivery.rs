@@ -240,7 +240,6 @@ async fn try_starttls(
 ///
 /// Returns MX hosts sorted by priority (lowest first).
 async fn lookup_mx(domain: &str) -> Result<Vec<String>, String> {
-    use trust_dns_resolver::config::*;
     use trust_dns_resolver::TokioAsyncResolver;
 
     let resolver = TokioAsyncResolver::tokio_from_system_conf()

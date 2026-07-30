@@ -208,6 +208,7 @@ impl Database {
     }
 
     /// List tokens for a user. Returns (id, label, scope, created_at, last_used_at, revoked).
+    #[allow(clippy::type_complexity)]
     pub fn list_user_tokens(
         &self,
         user_id: i64,
@@ -231,6 +232,7 @@ impl Database {
     }
 
     /// List all tokens (admin view). Returns (id, user_id, label, scope, created_at, revoked).
+    #[allow(clippy::type_complexity)]
     pub fn list_all_tokens(&self) -> SqlResult<Vec<(i64, i64, String, String, i64, bool)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -335,6 +337,7 @@ impl Database {
     }
 
     /// Get pending messages ready for delivery attempt.
+    #[allow(clippy::type_complexity)]
     pub fn get_pending_messages(
         &self,
         limit: i64,
@@ -418,6 +421,7 @@ impl Database {
     }
 
     /// List dead-lettered messages for admin review.
+    #[allow(clippy::type_complexity)]
     pub fn list_dead_letters(
         &self,
     ) -> SqlResult<Vec<(i64, i64, String, String, i32, Option<String>)>> {
@@ -476,6 +480,7 @@ impl Database {
     }
 
     /// Get recent delivery logs.
+    #[allow(clippy::type_complexity)]
     pub fn get_delivery_logs(
         &self,
         limit: i64,
@@ -501,6 +506,7 @@ impl Database {
     // ── Filters ───────────────────────────────────────────────────
 
     /// List all filters.
+    #[allow(clippy::type_complexity)]
     pub fn list_filters(&self) -> SqlResult<Vec<(i64, String, String, String, bool, i64, i64)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -653,7 +659,7 @@ impl Database {
     /// Add a custom domain for a user.
     pub fn add_custom_domain(&self, user_id: i64, domain: &str) -> SqlResult<i64> {
         let conn = self.conn.lock().unwrap();
-        let result = conn.execute(
+        let _result = conn.execute(
             "INSERT INTO custom_domains (domain, user_id, verified, created_at) VALUES (?1, ?2, 0, ?3)",
             rusqlite::params![domain.to_lowercase(), user_id, now()],
         )?;

@@ -15,6 +15,7 @@ use crate::dkim::DkimSigner;
 use crate::stats::EngineStats;
 
 /// Per-session state for submission.
+#[allow(dead_code)]
 struct SubmissionSession {
     db: Arc<Database>,
     maildir_path: String,
@@ -215,9 +216,8 @@ async fn handle_submission(
                     AuthState::None => {
                         // Start of AUTH command
                         let args = args.unwrap_or_default();
-                        if args.starts_with("PLAIN ") {
+                        if let Some(encoded) = args.strip_prefix("PLAIN ") {
                             // AUTH PLAIN inline
-                            let encoded = &args[6..];
                             match base64_decode(encoded) {
                                 Some(decoded) => {
                                     let parts: Vec<&[u8]> = decoded.split(|&b| b == 0).collect();
@@ -241,8 +241,8 @@ async fn handle_submission(
                                 }
                                 None => "501 Invalid base64 encoding\r\n".to_string(),
                             }
-                        } else if args.starts_with("LOGIN") {
-                            let login_args = args.trim_start_matches("LOGIN").trim();
+                        } else if let Some(login_args) = args.strip_prefix("LOGIN") {
+                            let login_args = login_args.trim();
                             if !login_args.is_empty() {
                                 // AUTH LOGIN with inline username
                                 match base64_decode(login_args) {

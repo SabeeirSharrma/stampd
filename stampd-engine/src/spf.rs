@@ -115,8 +115,7 @@ fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
             };
         }
 
-        if mechanism.starts_with("ip4:") {
-            let cidr = &mechanism[4..];
+        if let Some(cidr) = mechanism.strip_prefix("ip4:") {
             if let Some((network, prefix)) = parse_cidr(cidr) {
                 if sender_ip_matches(sender_ip, network, prefix) {
                     return true;
@@ -124,8 +123,7 @@ fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
             }
         }
 
-        if mechanism.starts_with("ip6:") {
-            let cidr = &mechanism[4..];
+        if let Some(cidr) = mechanism.strip_prefix("ip6:") {
             if let Some((network, prefix)) = parse_cidr_v6(cidr) {
                 if sender_ip_matches_v6(sender_ip, network, prefix) {
                     return true;
