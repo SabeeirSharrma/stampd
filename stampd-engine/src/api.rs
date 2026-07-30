@@ -10,14 +10,15 @@ use tracing::info;
 use serde_json::{json, Value};
 
 use crate::db::Database;
+use crate::stats::EngineStats;
 
-pub async fn run(port: u16, db: Arc<Database>) -> anyhow::Result<()> {
+pub async fn run(port: u16, db: Arc<Database>, stats: Arc<EngineStats>) -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/queue/stats", get(queue_stats))
         .route("/api/smtp/stats", get(smtp_stats))
         .route("/api/config", get(get_config))
-        .with_state(db);
+        .with_state((db, stats));
 
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     info!(port, "Engine internal API listening on 127.0.0.1");
@@ -32,7 +33,7 @@ async fn health() -> Json<Value> {
 }
 
 async fn queue_stats(
-    axum::extract::State(db): axum::extract::State<Arc<Database>>,
+    axum::extract::State((db, _stats)): axum::extract::State<(Arc<Database>, Arc<EngineStats>)>,
 ) -> Json<Value> {
     match db.queue_stats() {
         Ok((pending, delivered, dead)) => Json(json!({
@@ -44,18 +45,21 @@ async fn queue_stats(
     }
 }
 
-async fn smtp_stats() -> Json<Value> {
-    // TODO: track real stats in the engine
+async fn smtp_stats(
+    axum::extract::State((_db, stats)): axum::extract::State<(Arc<Database>, Arc<EngineStats>)>,
+) -> Json<Value> {
+    let (total, active, received, sent, failed) = stats.snapshot();
     Json(json!({
-        "connections_total": 0,
-        "connections_active": 0,
-        "messages_received": 0,
-        "messages_sent": 0,
+        "connections_total": total,
+        "connections_active": active,
+        "messages_received": received,
+        "messages_sent": sent,
+        "messages_sent_failed": failed,
     }))
 }
 
 async fn get_config(
-    axum::extract::State(db): axum::extract::State<Arc<Database>>,
+    axum::extract::State((db, _stats)): axum::extract::State<(Arc<Database>, Arc<EngineStats>)>,
 ) -> Json<Value> {
     match db.get_server_config() {
         Ok((domain, signup_enabled, dkim_selector)) => Json(json!({

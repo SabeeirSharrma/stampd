@@ -1,20 +1,12 @@
 use std::path::PathBuf;
 use tracing::{info, error};
 
-mod config;
-mod smtpd;
-mod submissiond;
-mod maildir;
-mod queue;
-mod db;
-mod delivery;
-mod api;
-mod tls;
-mod spf;
-mod dkim;
-mod filters;
-
-use config::Config;
+// Use the engine library for all modules
+use stampd_engine::{
+    config::Config,
+    smtpd, submissiond, maildir, queue, db, delivery, api, tls, spf, dkim, filters, stats, transit,
+    ENGINE_STATS, ENGINE_DB,
+};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -45,6 +37,13 @@ async fn main() -> anyhow::Result<()> {
     // Initialize database
     let database = Arc::new(db::Database::open(std::path::Path::new(&config.engine.db_path))?);
     info!(path = %config.engine.db_path, "Database initialized");
+
+    // Set global database handle for napi exports
+    let _ = ENGINE_DB.set(database.clone());
+
+    // Initialize engine stats
+    let engine_stats = stats::EngineStats::new();
+    let _ = ENGINE_STATS.set(engine_stats.clone());
 
     // Seed server_config if it doesn't exist
     match database.get_server_config() {
@@ -89,7 +88,8 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Start inbound SMTP server (with TLS and filters)
-    let smtp_tls = tls_config;
+    let smtp_tls = tls_config.clone();
+    let smtp_stats = engine_stats.clone();
     let smtp_handle = tokio::spawn(smtpd::run(
         config.engine.smtp_port,
         config.engine.maildir_path.clone(),
@@ -99,15 +99,20 @@ async fn main() -> anyhow::Result<()> {
         std::path::PathBuf::from(&config.engine.filters_dir),
         config.engine.filters_timeout_ms,
         config.engine.gateway_url.clone(),
+        smtp_stats,
     ));
 
-    // Start outbound submission server (with DKIM)
+    // Start outbound submission server (with DKIM and TLS)
     let submission_dkim = dkim_signer.clone();
+    let submission_tls = tls_config.as_ref().map(|tc| tc.server_config.clone());
+    let submission_stats = engine_stats.clone();
     let submission_handle = tokio::spawn(submissiond::run(
         config.engine.submission_port,
         config.engine.dkim_selector.clone(),
         database.clone(),
         submission_dkim,
+        submission_tls,
+        submission_stats,
     ));
 
     // Start queue processor
@@ -117,9 +122,11 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     // Start internal API server
+    let api_stats = engine_stats.clone();
     let api_handle = tokio::spawn(api::run(
         config.engine.api_port,
         database.clone(),
+        api_stats,
     ));
 
     info!("Stampd engine started");

@@ -10,7 +10,27 @@ use serde_json::json;
 /// Get delivery queue status
 #[napi]
 pub fn get_queue_status() -> String {
-    // TODO: Query actual delivery queue
+    use std::sync::OnceLock;
+    static DB: OnceLock<std::sync::Arc<crate::db::Database>> = OnceLock::new();
+
+    // Try to get the global database handle
+    if let Some(db) = crate::ENGINE_DB.get() {
+        match db.queue_stats() {
+            Ok((pending, delivered, dead)) => {
+                let status = json!({
+                    "pending": pending,
+                    "delivered": delivered,
+                    "dead": dead,
+                });
+                return status.to_string();
+            }
+            Err(e) => {
+                return json!({ "error": e.to_string() }).to_string();
+            }
+        }
+    }
+
+    // Fallback if DB not initialized
     let status = json!({
         "pending": 0,
         "delivered": 0,
@@ -22,7 +42,19 @@ pub fn get_queue_status() -> String {
 /// Get SMTP connection stats
 #[napi]
 pub fn get_smtp_stats() -> String {
-    // TODO: Query actual SMTP stats
+    if let Some(stats) = crate::ENGINE_STATS.get() {
+        let (total, active, received, sent, failed) = stats.snapshot();
+        let stats = json!({
+            "connections_total": total,
+            "connections_active": active,
+            "messages_received": received,
+            "messages_sent": sent,
+            "messages_sent_failed": failed,
+        });
+        return stats.to_string();
+    }
+
+    // Fallback if stats not initialized
     let stats = json!({
         "connections_total": 0,
         "connections_active": 0,
@@ -35,7 +67,7 @@ pub fn get_smtp_stats() -> String {
 /// Trigger config reload
 #[napi]
 pub fn reload_config() -> String {
-    // TODO: Trigger config reload
+    // TODO: Trigger config reload (implemented in v0.8.0)
     let result = json!({
         "success": true,
         "message": "Config reload triggered",
@@ -46,10 +78,19 @@ pub fn reload_config() -> String {
 /// Check if domain is configured
 #[napi]
 pub fn check_domain(domain: String) -> String {
-    // TODO: Check if domain is configured
+    if let Some(db) = crate::ENGINE_DB.get() {
+        let configured = db.is_domain_allowed(&domain);
+        let result = json!({
+            "domain": domain,
+            "configured": configured,
+        });
+        return result.to_string();
+    }
+
+    // Fallback if DB not initialized
     let result = json!({
         "domain": domain,
-        "configured": true,
+        "configured": false,
     });
     result.to_string()
 }

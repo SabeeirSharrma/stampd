@@ -33,3 +33,4 @@ trust-dns-resolver = "0.23"
 ring = "0.17"
 base64 = "0.22"
 reqwest = { version = "0.12", features = ["json"] }
+argon2 = "0.5"

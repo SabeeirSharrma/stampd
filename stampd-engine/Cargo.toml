@@ -33,6 +33,7 @@ trust-dns-resolver.workspace = true
 ring.workspace = true
 base64.workspace = true
 reqwest.workspace = true
+argon2.workspace = true
 
 [build-dependencies]
 napi-build = "2"

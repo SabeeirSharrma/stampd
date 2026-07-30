@@ -16,6 +16,7 @@ use crate::db::Database;
 use crate::tls::TlsConfig;
 use crate::spf::check_spf;
 use crate::filters::{self, FilterContext, HookPoint};
+use crate::stats::EngineStats;
 
 /// Per-session state during an SMTP transaction.
 struct SmtpSession {
@@ -42,6 +43,7 @@ pub async fn run(
     filters_dir: std::path::PathBuf,
     filters_timeout_ms: u64,
     gateway_url: Option<String>,
+    stats: Arc<EngineStats>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     info!(port, domain = %domain, tls = tls_config.is_some(), "Inbound SMTP server listening");
@@ -51,6 +53,7 @@ pub async fn run(
     loop {
         let (stream, addr) = listener.accept().await?;
         info!(addr = %addr, "New inbound connection");
+        stats.connection_opened();
 
         let maildir_path = maildir_path.clone();
         let domain = domain.clone();
@@ -58,9 +61,12 @@ pub async fn run(
         let tls_config = tls_config.clone();
         let filters_dir = filters_dir.clone();
         let gateway_url = gateway_url.clone();
+        let stats = stats.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, addr, maildir_path, domain, db, tls_config, filters_dir, filters_timeout_ms, gateway_url).await {
+            let result = handle_connection(stream, addr, maildir_path, domain, db, tls_config, filters_dir, filters_timeout_ms, gateway_url).await;
+            stats.connection_closed();
+            if let Err(e) = result {
                 error!(addr = %addr, error = ?e, "Connection error");
             }
         });

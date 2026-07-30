@@ -12,6 +12,7 @@ use std::path::Path;
 
 use crate::db::Database;
 use crate::dkim::DkimSigner;
+use crate::stats::EngineStats;
 
 /// Per-session state for submission.
 struct SubmissionSession {
@@ -20,12 +21,29 @@ struct SubmissionSession {
     domain: String,
     dkim_selector: String,
     dkim_signer: Option<DkimSigner>,
+    tls_config: Option<Arc<rustls::ServerConfig>>,
     /// Authenticated user id (None until AUTH succeeds)
     authenticated_user_id: Option<i64>,
     /// Sender from MAIL FROM
     mail_from: Option<String>,
     /// Recipients
     rcpt_to: Vec<String>,
+    /// TLS active flag
+    tls_active: bool,
+    /// AUTH LOGIN state machine
+    auth_state: AuthState,
+    /// Pending username during AUTH LOGIN flow
+    pending_username: Option<String>,
+}
+
+/// Multi-step AUTH LOGIN state.
+enum AuthState {
+    /// Not in an AUTH LOGIN flow.
+    None,
+    /// Waiting for base64-encoded username.
+    AwaitingUsername,
+    /// Waiting for base64-encoded password.
+    AwaitingPassword,
 }
 
 pub async fn run(
@@ -33,9 +51,11 @@ pub async fn run(
     dkim_selector: String,
     db: Arc<Database>,
     dkim_signer: Option<DkimSigner>,
+    tls_config: Option<Arc<rustls::ServerConfig>>,
+    stats: Arc<EngineStats>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
-    info!(port, dkim = dkim_signer.is_some(), "Submission server listening");
+    info!(port, dkim = dkim_signer.is_some(), tls = tls_config.is_some(), "Submission server listening");
 
     // Get domain from server_config
     let (domain, _, _) = db.get_server_config()
@@ -44,14 +64,19 @@ pub async fn run(
     loop {
         let (stream, addr) = listener.accept().await?;
         info!(addr = %addr, "New submission connection");
+        stats.connection_opened();
 
         let db = db.clone();
         let dkim_selector = dkim_selector.clone();
         let domain = domain.clone();
         let dkim_signer = dkim_signer.clone();
+        let tls_config = tls_config.clone();
+        let stats = stats.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = handle_submission(stream, addr, db, dkim_selector, domain, dkim_signer).await {
+            let result = handle_submission(stream, addr, db, dkim_selector, domain, dkim_signer, tls_config).await;
+            stats.connection_closed();
+            if let Err(e) = result {
                 error!(addr = %addr, error = ?e, "Submission error");
             }
         });
@@ -59,15 +84,14 @@ pub async fn run(
 }
 
 async fn handle_submission(
-    stream: tokio::net::TcpStream,
+    mut stream: tokio::net::TcpStream,
     addr: SocketAddr,
     db: Arc<Database>,
     dkim_selector: String,
     domain: String,
     dkim_signer: Option<DkimSigner>,
+    tls_config: Option<Arc<rustls::ServerConfig>>,
 ) -> anyhow::Result<()> {
-    let (reader, mut writer) = stream.into_split();
-    let mut reader = BufReader::new(reader);
     let mut line = String::new();
 
     let mut session = SubmissionSession {
@@ -76,19 +100,28 @@ async fn handle_submission(
         domain: domain.clone(),
         dkim_selector,
         dkim_signer,
+        tls_config,
         authenticated_user_id: None,
         mail_from: None,
         rcpt_to: Vec::new(),
+        tls_active: false,
+        auth_state: AuthState::None,
+        pending_username: None,
     };
 
     // Greeting
-    writer
+    stream
         .write_all(b"220 Stampd Submission ready\r\n")
         .await?;
 
     loop {
         line.clear();
-        let bytes_read = reader.read_line(&mut line).await?;
+        // Read line from current stream (plain or TLS)
+        let bytes_read = {
+            let mut buf_reader = BufReader::new(&mut stream);
+            buf_reader.read_line(&mut line).await?
+        };
+
         if bytes_read == 0 {
             break;
         }
@@ -108,30 +141,145 @@ async fn handle_submission(
         let response = match verb.as_str() {
             "HELO" | "EHLO" => {
                 if verb == "EHLO" {
-                    format!(
-                        "250-{}\r\n250-8BITMIME\r\n250-AUTH PLAIN LOGIN\r\n250-STARTTLS\r\n250 SIZE 52428800\r\n",
+                    let mut ehlo = format!(
+                        "250-{}\r\n250-8BITMIME\r\n250-AUTH PLAIN LOGIN\r\n",
                         domain
-                    )
+                    );
+                    // Only advertise STARTTLS if TLS is configured and not yet active
+                    if session.tls_config.is_some() && !session.tls_active {
+                        ehlo.push_str("250-STARTTLS\r\n");
+                    }
+                    ehlo.push_str("250 SIZE 52428800\r\n");
+                    ehlo
                 } else {
                     format!("250 {}\r\n", domain)
                 }
             }
             "AUTH" => {
-                match handle_auth(&args.unwrap_or_default(), &session.db) {
-                    Ok(user_id) => {
-                        session.authenticated_user_id = Some(user_id);
-                        info!(addr = %addr, user_id, "Authentication successful");
-                        "235 Authentication successful\r\n".to_string()
+                match &session.auth_state {
+                    AuthState::AwaitingUsername => {
+                        // This is the username response to 334 VXNlcm5hbWU6
+                        let args = args.unwrap_or_default();
+                        match base64_decode(&args) {
+                            Some(bytes) => {
+                                let username = String::from_utf8_lossy(&bytes).to_string();
+                                session.pending_username = Some(username);
+                                session.auth_state = AuthState::AwaitingPassword;
+                                "334 UGFzc3dvcmQ6\r\n".to_string()
+                            }
+                            None => {
+                                session.auth_state = AuthState::None;
+                                session.pending_username = None;
+                                "501 Invalid encoding\r\n".to_string()
+                            }
+                        }
                     }
-                    Err(e) => {
-                        warn!(addr = %addr, error = %e, "Authentication failed");
-                        format!("535 {}\r\n", e)
+                    AuthState::AwaitingPassword => {
+                        // This is the password response to 334 UGFzc3dvcmQ6
+                        let args = args.unwrap_or_default();
+                        match base64_decode(&args) {
+                            Some(password_bytes) => {
+                                let password = String::from_utf8_lossy(&password_bytes);
+                                let username = session.pending_username.take().unwrap_or_default();
+                                session.auth_state = AuthState::None;
+                                match authenticate_user(&username, &password, &session.db) {
+                                    Ok(user_id) => {
+                                        session.authenticated_user_id = Some(user_id);
+                                        info!(addr = %addr, user_id, "AUTH LOGIN successful");
+                                        "235 Authentication successful\r\n".to_string()
+                                    }
+                                    Err(e) => {
+                                        warn!(addr = %addr, error = %e, "AUTH LOGIN failed");
+                                        format!("535 {}\r\n", e)
+                                    }
+                                }
+                            }
+                            None => {
+                                session.auth_state = AuthState::None;
+                                session.pending_username = None;
+                                "501 Invalid encoding\r\n".to_string()
+                            }
+                        }
+                    }
+                    AuthState::None => {
+                        // Start of AUTH command
+                        let args = args.unwrap_or_default();
+                        if args.starts_with("PLAIN ") {
+                            // AUTH PLAIN inline
+                            let encoded = &args[6..];
+                            match base64_decode(encoded) {
+                                Some(decoded) => {
+                                    let parts: Vec<&[u8]> = decoded.split(|&b| b == 0).collect();
+                                    if parts.len() < 3 {
+                                        "501 Invalid AUTH PLAIN format\r\n".to_string()
+                                    } else {
+                                        let username = String::from_utf8_lossy(parts[1]);
+                                        let password = String::from_utf8_lossy(parts[2]);
+                                        match authenticate_user(&username, &password, &session.db) {
+                                            Ok(user_id) => {
+                                                session.authenticated_user_id = Some(user_id);
+                                                info!(addr = %addr, user_id, "AUTH PLAIN successful");
+                                                "235 Authentication successful\r\n".to_string()
+                                            }
+                                            Err(e) => {
+                                                warn!(addr = %addr, error = %e, "AUTH PLAIN failed");
+                                                format!("535 {}\r\n", e)
+                                            }
+                                        }
+                                    }
+                                }
+                                None => "501 Invalid base64 encoding\r\n".to_string(),
+                            }
+                        } else if args.starts_with("LOGIN") {
+                            let login_args = args.trim_start_matches("LOGIN").trim();
+                            if !login_args.is_empty() {
+                                // AUTH LOGIN with inline username
+                                match base64_decode(login_args) {
+                                    Some(bytes) => {
+                                        let username = String::from_utf8_lossy(&bytes).to_string();
+                                        session.pending_username = Some(username);
+                                        session.auth_state = AuthState::AwaitingPassword;
+                                        "334 UGFzc3dvcmQ6\r\n".to_string()
+                                    }
+                                    None => "501 Invalid encoding\r\n".to_string(),
+                                }
+                            } else {
+                                // AUTH LOGIN without inline username
+                                session.auth_state = AuthState::AwaitingUsername;
+                                "334 VXNlcm5hbWU6\r\n".to_string()
+                            }
+                        } else {
+                            "501 Unsupported AUTH mechanism\r\n".to_string()
+                        }
                     }
                 }
             }
             "STARTTLS" => {
-                // TODO: Phase 0.2.3 — implement TLS upgrade
-                "454 TLS not available\r\n".to_string()
+                if session.tls_active {
+                    "503 TLS already active\r\n".to_string()
+                } else if let Some(tls_cfg) = session.tls_config.clone() {
+                    // Acknowledge STARTTLS
+                    stream.write_all(b"220 Ready to start TLS\r\n").await?;
+
+                    // Perform TLS handshake on the raw stream
+                    let tls_acceptor = tokio_rustls::TlsAcceptor::from(tls_cfg);
+                    match tls_acceptor.accept(stream).await {
+                        Ok(tls_stream) => {
+                            info!(addr = %addr, "STARTTLS handshake successful");
+                            session.tls_active = true;
+
+                            // Continue session over TLS
+                            tls_session(tls_stream, &mut session, &mut line, &addr).await?;
+                            return Ok(());
+                        }
+                        Err(e) => {
+                            warn!(addr = %addr, error = ?e, "STARTTLS handshake failed");
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    "454 TLS not available\r\n".to_string()
+                }
             }
             "MAIL" => {
                 if session.authenticated_user_id.is_none() {
@@ -174,9 +322,9 @@ async fn handle_submission(
                 } else if session.mail_from.is_none() || session.rcpt_to.is_empty() {
                     "503 Bad sequence of commands\r\n".to_string()
                 } else {
-                    writer.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
+                    stream.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
 
-                    let message = read_message_body(&mut reader, &mut line).await;
+                    let message = read_message_body(&mut stream, &mut line).await;
 
                     // Store the message to a temp file and enqueue for each recipient
                     match enqueue_message(&session, &message).await {
@@ -203,7 +351,7 @@ async fn handle_submission(
                 "250 OK\r\n".to_string()
             }
             "QUIT" => {
-                writer.write_all(b"221 Bye\r\n").await?;
+                stream.write_all(b"221 Bye\r\n").await?;
                 break;
             }
             "NOOP" => {
@@ -215,43 +363,153 @@ async fn handle_submission(
             }
         };
 
-        writer.write_all(response.as_bytes()).await?;
+        stream.write_all(response.as_bytes()).await?;
     }
 
     info!(addr = %addr, "Submission connection closed");
     Ok(())
 }
 
-// ── AUTH Handling ────────────────────────────────────────────────
+/// Handle SMTP submission session over TLS stream.
+async fn tls_session(
+    mut tls_stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+    session: &mut SubmissionSession,
+    line: &mut String,
+    addr: &SocketAddr,
+) -> anyhow::Result<()> {
+    loop {
+        line.clear();
+        let bytes_read = {
+            let mut buf_reader = BufReader::new(&mut tls_stream);
+            buf_reader.read_line(line).await?
+        };
 
-/// Handle AUTH PLAIN or AUTH LOGIN.
-fn handle_auth(args: &str, db: &Database) -> Result<i64, String> {
-    let args = args.trim();
-
-    if args.starts_with("PLAIN ") {
-        let encoded = &args[6..];
-        let decoded = base64_decode(encoded)
-            .ok_or("Invalid base64 encoding")?;
-
-        // AUTH PLAIN format: \0username\0password
-        let parts: Vec<&[u8]> = decoded.split(|&b| b == 0).collect();
-        if parts.len() < 3 {
-            return Err("Invalid AUTH PLAIN format".to_string());
+        if bytes_read == 0 {
+            break;
         }
 
-        let username = String::from_utf8_lossy(parts[1]);
-        let password = String::from_utf8_lossy(parts[2]);
+        let cmd_line = line.trim_end_matches("\r\n").to_string();
+        if cmd_line.is_empty() {
+            continue;
+        }
 
-        authenticate_user(&username, &password, db)
-    } else if args.starts_with("LOGIN ") {
-        // AUTH LOGIN: first token is base64(username), then base64(password)
-        // For simplicity, we handle the first part here; the second comes in the next command
-        // TODO: implement multi-step AUTH LOGIN
-        Err("AUTH LOGIN not yet supported, use AUTH PLAIN".to_string())
-    } else {
-        Err("Unsupported AUTH mechanism".to_string())
+        info!(addr = %addr, cmd = %cmd_line, tls = true, "Submission (TLS)");
+
+        let (verb, args) = match cmd_line.split_once(' ') {
+            Some((v, a)) => (v.to_uppercase(), Some(a.to_string())),
+            None => (cmd_line.to_uppercase(), None),
+        };
+
+        let response = match verb.as_str() {
+            "HELO" | "EHLO" => {
+                if verb == "EHLO" {
+                    format!(
+                        "250-{}\r\n250-8BITMIME\r\n250-AUTH PLAIN LOGIN\r\n250 SIZE 52428800\r\n",
+                        session.domain
+                    )
+                } else {
+                    format!("250 {}\r\n", session.domain)
+                }
+            }
+            "AUTH" => {
+                // AUTH is not allowed after STARTTLS in this implementation
+                // (TLS session inherits the authenticated state from before)
+                if session.authenticated_user_id.is_some() {
+                    "235 Already authenticated\r\n".to_string()
+                } else {
+                    "530 Authentication required before STARTTLS\r\n".to_string()
+                }
+            }
+            "MAIL" => {
+                if session.authenticated_user_id.is_none() {
+                    "530 Authentication required\r\n".to_string()
+                } else {
+                    match parse_address(&args.unwrap_or_default()) {
+                        Ok(sender) => {
+                            session.mail_from = Some(sender.clone());
+                            session.rcpt_to.clear();
+                            info!(addr = %addr, sender = %sender, "MAIL FROM accepted (TLS)");
+                            "250 OK\r\n".to_string()
+                        }
+                        Err(e) => format!("501 {}\r\n", e),
+                    }
+                }
+            }
+            "RCPT" => {
+                if session.authenticated_user_id.is_none() {
+                    "530 Authentication required\r\n".to_string()
+                } else {
+                    match parse_address(&args.unwrap_or_default()) {
+                        Ok(recipient) => {
+                            // Validate: recipients must be external (not our domain)
+                            let rcpt_domain = recipient.split('@').nth(1).unwrap_or("");
+                            if rcpt_domain.eq_ignore_ascii_case(&session.domain) {
+                                "550 Cannot send to local users via submission\r\n".to_string()
+                            } else {
+                                session.rcpt_to.push(recipient.clone());
+                                info!(addr = %addr, recipient = %recipient, "RCPT TO accepted (TLS)");
+                                "250 OK\r\n".to_string()
+                            }
+                        }
+                        Err(e) => format!("501 {}\r\n", e),
+                    }
+                }
+            }
+            "DATA" => {
+                if session.authenticated_user_id.is_none() {
+                    "530 Authentication required\r\n".to_string()
+                } else if session.mail_from.is_none() || session.rcpt_to.is_empty() {
+                    "503 Bad sequence of commands\r\n".to_string()
+                } else {
+                    tls_stream.write_all(b"354 Start mail input; end with <CRLF>.<CRLF>\r\n").await?;
+
+                    let message = read_message_body(&mut tls_stream, line).await;
+
+                    // Store the message to a temp file and enqueue for each recipient
+                    match enqueue_message(session, &message).await {
+                        Ok(count) => {
+                            info!(
+                                addr = %addr,
+                                recipients = count,
+                                "Message enqueued for delivery (TLS)"
+                            );
+                            session.mail_from = None;
+                            session.rcpt_to.clear();
+                            "250 OK: Message enqueued for delivery\r\n".to_string()
+                        }
+                        Err(e) => {
+                            error!(addr = %addr, error = ?e, "Failed to enqueue message");
+                            "451 Local error in processing\r\n".to_string()
+                        }
+                    }
+                }
+            }
+            "RSET" => {
+                session.mail_from = None;
+                session.rcpt_to.clear();
+                "250 OK\r\n".to_string()
+            }
+            "QUIT" => {
+                tls_stream.write_all(b"221 Bye\r\n").await?;
+                break;
+            }
+            "NOOP" => {
+                "250 OK\r\n".to_string()
+            }
+            _ => {
+                warn!(addr = %addr, verb = %verb, "Unknown command");
+                "500 Command not recognized\r\n".to_string()
+            }
+        };
+
+        tls_stream.write_all(response.as_bytes()).await?;
     }
+
+    info!(addr = %addr, "Submission TLS session closed");
+    Ok(())
 }
+
+// ── Authentication ────────────────────────────────────────────────
 
 /// Authenticate a user by email and password.
 fn authenticate_user(email: &str, password: &str, db: &Database) -> Result<i64, String> {
@@ -264,7 +522,6 @@ fn authenticate_user(email: &str, password: &str, db: &Database) -> Result<i64, 
     }
 
     // Verify password with argon2id
-    // For now, do a simple hash comparison (placeholder — replace with real argon2)
     if verify_password(password, &password_hash) {
         Ok(user_id)
     } else {
@@ -272,13 +529,18 @@ fn authenticate_user(email: &str, password: &str, db: &Database) -> Result<i64, 
     }
 }
 
-/// Verify a password against its hash.
-///
-/// TODO: Replace with real argon2id verification.
+/// Verify a password against its hash using argon2id.
 fn verify_password(password: &str, hash: &str) -> bool {
-    // Placeholder: simple equality check for development
-    // In production, use argon2 crate
-    format!("hash:{}", password) == hash
+    use argon2::{Argon2, password_hash::{PasswordHash, PasswordVerifier}};
+
+    let parsed_hash = match PasswordHash::new(hash) {
+        Ok(h) => h,
+        Err(_) => return false,
+    };
+
+    Argon2::default()
+        .verify_password(password.as_bytes(), &parsed_hash)
+        .is_ok()
 }
 
 // ── Address Parsing ──────────────────────────────────────────────
@@ -312,14 +574,15 @@ fn parse_address(args: &str) -> Result<String, String> {
 
 /// Read the message body until dot-stuffing terminator.
 async fn read_message_body(
-    reader: &mut tokio::io::BufReader<tokio::net::tcp::OwnedReadHalf>,
+    reader: &mut (impl tokio::io::AsyncRead + Unpin),
     line: &mut String,
 ) -> Vec<u8> {
     let mut body = Vec::new();
+    let mut buf_reader = BufReader::new(reader);
 
     loop {
         line.clear();
-        if reader.read_line(line).await.unwrap_or(0) == 0 {
+        if buf_reader.read_line(line).await.unwrap_or(0) == 0 {
             break;
         }
 
