@@ -2,22 +2,67 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 
 const ADMIN_URL = process.env.ADMIN_URL || 'http://127.0.0.1:8081'
 
-async function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
+async function hashToken(token: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(token)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+async function validateAdmin(
+  req: FastifyRequest,
+  reply: FastifyReply,
+): Promise<{ valid: boolean; is_admin: boolean } | void> {
   const sessionId = req.cookies?.['stampd-session']
-  if (sessionId) {
-    // Validate session via admin service
-    // For now, pass session ID as header
-    ;(req as any).headers['x-stampd-session'] = sessionId
-    return
-  }
-
   const authHeader = req.headers.authorization
-  if (authHeader?.startsWith('Bearer ')) {
-    ;(req as any).headers['x-stampd-token'] = authHeader.slice(7)
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+  if (!sessionId && !token) {
+    reply.status(401).send({ error: 'Authentication required' })
     return
   }
 
-  return reply.status(401).send({ error: 'Authentication required' })
+  try {
+    const body: Record<string, string> = {}
+    if (sessionId) {
+      body.session_id = sessionId
+    } else if (token) {
+      body.token_hash = await hashToken(token)
+    }
+
+    const response = await fetch(`${ADMIN_URL}/auth/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    if (!response.ok) {
+      reply.status(502).send({ error: 'Admin service unavailable' })
+      return
+    }
+
+    const result = await response.json() as { valid: boolean; is_admin: boolean }
+
+    if (!result.valid) {
+      reply.status(401).send({ error: 'Invalid or expired session' })
+      return
+    }
+
+    if (!result.is_admin) {
+      reply.status(403).send({ error: 'Admin access required' })
+      return
+    }
+
+    return result
+  } catch {
+    reply.status(502).send({ error: 'Admin service unavailable' })
+    return
+  }
+}
+
+async function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
+  await validateAdmin(req, reply)
 }
 
 async function proxyToAdmin(
@@ -31,11 +76,13 @@ async function proxyToAdmin(
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     }
-    if ((req as any).headers['x-stampd-session']) {
-      headers['x-stampd-session'] = (req as any).headers['x-stampd-session']
-    }
-    if ((req as any).headers['x-stampd-token']) {
-      headers['x-stampd-token'] = (req as any).headers['x-stampd-token']
+
+    const sessionId = req.cookies?.['stampd-session']
+    const authHeader = req.headers.authorization
+    if (sessionId) {
+      headers['x-stampd-session'] = sessionId
+    } else if (authHeader?.startsWith('Bearer ')) {
+      headers['x-stampd-token'] = authHeader.slice(7)
     }
 
     const response = await fetch(`${ADMIN_URL}${path}`, {
@@ -46,7 +93,7 @@ async function proxyToAdmin(
 
     const data = await response.json()
     return reply.status(response.status).send(data)
-  } catch (err) {
+  } catch {
     return reply.status(502).send({ error: 'Admin service unavailable' })
   }
 }

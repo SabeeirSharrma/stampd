@@ -3,6 +3,7 @@ uvicorn[standard]>=0.30.0
 sqlalchemy>=2.0.0
 aiosqlite>=0.20.0
 pydantic>=2.0.0
+dnspython>=2.4.0
 
 # Transit — cross-language interop (https://github.com/SabeeirSharrma/transit)
 # Python runtime is imported from node_modules/transit at runtime.

@@ -10,7 +10,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.9.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/sabeeir/stampd"
@@ -34,3 +34,4 @@ ring = "0.17"
 base64 = "0.22"
 reqwest = { version = "0.12", features = ["json"] }
 argon2 = "0.5"
+getrandom = "0.2"

@@ -68,3 +68,65 @@ impl EngineStats {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_zero_state() {
+        let stats = EngineStats::new();
+        let snap = stats.snapshot();
+        assert_eq!(snap, (0, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn test_connection_tracking() {
+        let stats = EngineStats::new();
+        stats.connection_opened();
+        let snap = stats.snapshot();
+        assert_eq!(snap.0, 1); // total
+        assert_eq!(snap.1, 1); // active
+
+        stats.connection_opened();
+        stats.connection_opened();
+        let snap = stats.snapshot();
+        assert_eq!(snap.0, 3);
+        assert_eq!(snap.1, 3);
+
+        stats.connection_closed();
+        let snap = stats.snapshot();
+        assert_eq!(snap.0, 3);
+        assert_eq!(snap.1, 2);
+    }
+
+    #[test]
+    fn test_message_tracking() {
+        let stats = EngineStats::new();
+
+        stats.message_received();
+        stats.message_received();
+        stats.message_received();
+        assert_eq!(stats.snapshot().2, 3);
+
+        stats.message_sent();
+        assert_eq!(stats.snapshot().3, 1);
+
+        stats.message_sent_failed();
+        stats.message_sent_failed();
+        assert_eq!(stats.snapshot().4, 2);
+    }
+
+    #[test]
+    fn test_mixed_operations() {
+        let stats = EngineStats::new();
+        stats.connection_opened();
+        stats.connection_opened();
+        stats.message_received();
+        stats.connection_closed();
+        stats.message_sent();
+
+        let snap = stats.snapshot();
+        assert_eq!(snap, (2, 1, 1, 1, 0));
+    }
+}

@@ -86,3 +86,38 @@ fn extract_from_header(message: &[u8]) -> Option<String> {
     }
     None
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_from_header_plain() {
+        let msg = b"From: alice@foo.com\r\nSubject: test\r\n\r\nBody";
+        assert_eq!(extract_from_header(msg).unwrap(), "alice@foo.com");
+    }
+
+    #[test]
+    fn test_extract_from_header_with_name() {
+        let msg = b"From: Alice <alice@foo.com>\r\nSubject: test\r\n\r\nBody";
+        assert_eq!(extract_from_header(msg).unwrap(), "alice@foo.com");
+    }
+
+    #[test]
+    fn test_extract_from_header_case_insensitive() {
+        let msg = b"from: bob@bar.com\r\nSubject: test\r\n\r\nBody";
+        assert_eq!(extract_from_header(msg).unwrap(), "bob@bar.com");
+    }
+
+    #[test]
+    fn test_extract_from_header_no_from() {
+        let msg = b"Subject: test\r\n\r\nBody";
+        assert!(extract_from_header(msg).is_none());
+    }
+
+    #[test]
+    fn test_extract_from_header_empty() {
+        let msg = b"";
+        assert!(extract_from_header(msg).is_none());
+    }
+}

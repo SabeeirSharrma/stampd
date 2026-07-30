@@ -36,13 +36,13 @@ export function isAdmin(): boolean {
 }
 
 /**
- * Redirect to /login if not authenticated.
+ * Redirect to / (login) if not authenticated.
  * Call this at the top of protected pages.
  */
 export function requireAuth(): AuthUser {
   const user = getUser();
   if (!user) {
-    window.location.href = "/login";
+    window.location.href = "/";
     throw new Error("Not authenticated");
   }
   return user;
@@ -54,7 +54,7 @@ export function requireAuth(): AuthUser {
 export function redirectIfAuth(): AuthUser | null {
   const user = getUser();
   if (user) {
-    window.location.href = "/";
+    window.location.href = "/inbox";
     return user;
   }
   return null;

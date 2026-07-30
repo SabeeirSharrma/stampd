@@ -101,21 +101,14 @@ fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
     let mechanisms: Vec<&str> = record.split_whitespace().collect();
 
     for mechanism in mechanisms.iter().skip(1) {
-        // Skip "v=spf1"
-        if mechanism.starts_with("all") {
+        let m = *mechanism; // dereference &&str to &str
+                            // Check for "all" qualifiers: +all, -all, ~all, ?all, bare "all"
+        if m == "all" || m == "+all" || m == "-all" || m == "~all" || m == "?all" {
             // +all = pass, -all = fail, ~all = softfail, ?all = neutral
-            return if mechanism.starts_with("+all") || mechanism.starts_with("?all") {
-                true
-            } else if mechanism.starts_with("-all") {
-                false
-            } else {
-                // ~all (softfail) — we pass but log
-                info!(mechanism = %mechanism, "SPF softfail — accepting mail");
-                true
-            };
+            return m == "+all" || m == "?all" || m == "~all";
         }
 
-        if let Some(cidr) = mechanism.strip_prefix("ip4:") {
+        if let Some(cidr) = m.strip_prefix("ip4:") {
             if let Some((network, prefix)) = parse_cidr(cidr) {
                 if sender_ip_matches(sender_ip, network, prefix) {
                     return true;
@@ -123,7 +116,7 @@ fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
             }
         }
 
-        if let Some(cidr) = mechanism.strip_prefix("ip6:") {
+        if let Some(cidr) = m.strip_prefix("ip6:") {
             if let Some((network, prefix)) = parse_cidr_v6(cidr) {
                 if sender_ip_matches_v6(sender_ip, network, prefix) {
                     return true;
@@ -132,17 +125,133 @@ fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
         }
 
         // a, mx, include — complex lookups, log and skip for v1
-        if mechanism.starts_with("a")
-            || mechanism.starts_with("mx")
-            || mechanism.starts_with("include:")
-        {
-            info!(mechanism = %mechanism, "SPF mechanism not fully supported in v1, skipping");
+        if m.starts_with("a") || m.starts_with("mx") || m.starts_with("include:") {
+            info!(mechanism = %m, "SPF mechanism not fully supported in v1, skipping");
             continue;
         }
     }
 
     // Default: if no mechanism matched, neutral
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
+    #[test]
+    fn test_parse_cidr_valid() {
+        let (ip, prefix) = parse_cidr("10.0.0.0/8").unwrap();
+        assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0)));
+        assert_eq!(prefix, 8);
+    }
+
+    #[test]
+    fn test_parse_cidr_no_slash() {
+        assert!(parse_cidr("10.0.0.0").is_none());
+    }
+
+    #[test]
+    fn test_parse_cidr_invalid_ip() {
+        assert!(parse_cidr("999.999.999.999/24").is_none());
+    }
+
+    #[test]
+    fn test_parse_cidr_invalid_prefix() {
+        assert!(parse_cidr("10.0.0.0/abc").is_none());
+    }
+
+    #[test]
+    fn test_parse_cidr_v6_valid() {
+        let (ip, prefix) = parse_cidr_v6("::1/128").unwrap();
+        assert_eq!(ip, IpAddr::V6(Ipv6Addr::LOCALHOST));
+        assert_eq!(prefix, 128);
+    }
+
+    #[test]
+    fn test_sender_ip_matches_exact() {
+        let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
+        let net = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
+        assert!(sender_ip_matches(ip, net, 32));
+    }
+
+    #[test]
+    fn test_sender_ip_matches_subnet() {
+        let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
+        let net = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 0));
+        assert!(sender_ip_matches(ip, net, 24));
+    }
+
+    #[test]
+    fn test_sender_ip_matches_different_subnet() {
+        let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 2, 100));
+        let net = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 0));
+        assert!(!sender_ip_matches(ip, net, 24));
+    }
+
+    #[test]
+    fn test_sender_ip_matches_v6() {
+        let ip = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
+        let net = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0));
+        assert!(sender_ip_matches_v6(ip, net, 32));
+    }
+
+    #[test]
+    fn test_sender_ip_matches_v6_different() {
+        let ip = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 1, 0, 0, 0, 0, 1));
+        let net = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0));
+        assert!(!sender_ip_matches_v6(ip, net, 48)); // /48 differentiates on 3rd hextet
+    }
+
+    #[test]
+    fn test_evaluate_spf_minus_all() {
+        let record = "v=spf1 -all";
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        assert!(!evaluate_spf(record, ip));
+    }
+
+    #[test]
+    fn test_evaluate_spf_plus_all() {
+        let record = "v=spf1 +all";
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        assert!(evaluate_spf(record, ip));
+    }
+
+    #[test]
+    fn test_evaluate_spf_question_all() {
+        let record = "v=spf1 ?all";
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        assert!(evaluate_spf(record, ip));
+    }
+
+    #[test]
+    fn test_evaluate_spf_tilde_all() {
+        let record = "v=spf1 ~all";
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        assert!(evaluate_spf(record, ip)); // softfail = pass
+    }
+
+    #[test]
+    fn test_evaluate_spf_ip4_match() {
+        let record = "v=spf1 ip4:10.0.0.0/8 -all";
+        let ip = IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3));
+        assert!(evaluate_spf(record, ip));
+    }
+
+    #[test]
+    fn test_evaluate_spf_ip4_no_match() {
+        let record = "v=spf1 ip4:10.0.0.0/8 -all";
+        let ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
+        assert!(!evaluate_spf(record, ip));
+    }
+
+    #[test]
+    fn test_evaluate_spf_no_mechanism_neutral() {
+        let record = "v=spf1";
+        let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
+        assert!(evaluate_spf(record, ip)); // default neutral = pass
+    }
 }
 
 fn parse_cidr(cidr: &str) -> Option<(IpAddr, u32)> {

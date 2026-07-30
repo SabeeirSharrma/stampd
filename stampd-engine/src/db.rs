@@ -773,6 +773,7 @@ CREATE TABLE IF NOT EXISTS custom_domains (
     domain TEXT NOT NULL UNIQUE,
     user_id INTEGER NOT NULL REFERENCES users(id),
     verified BOOLEAN NOT NULL DEFAULT 0,
+    verification_token TEXT,
     created_at INTEGER NOT NULL
 );
 
@@ -804,10 +805,339 @@ fn uuid_v4() -> String {
 }
 
 fn rand_bytes() -> [u8; 16] {
-    // Use /dev/urandom for simplicity
     let mut buf = [0u8; 16];
-    std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| std::io::Read::read_exact(&mut f, &mut buf))
-        .ok();
+    getrandom::getrandom(&mut buf).expect("Failed to generate random bytes");
     buf
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn test_db() -> Database {
+        Database::open(Path::new(":memory:")).unwrap()
+    }
+
+    #[test]
+    fn test_schema_creates_tables() {
+        let db = test_db();
+        // Seed config so get_server_config works
+        seed_config(&db, "test.com");
+        let (domain, _, _) = db.get_server_config().unwrap();
+        assert_eq!(domain, "test.com");
+    }
+
+    #[test]
+    fn test_server_config_seed_and_update() {
+        let db = test_db();
+        // Seed server_config
+        {
+            let conn_lock = db.conn.lock().unwrap();
+            conn_lock
+                .execute(
+                    "INSERT OR IGNORE INTO server_config (id, domain, signup_enabled, dkim_selector) VALUES (1, 'test.com', 1, 'default')",
+                    [],
+                )
+                .unwrap();
+            drop(conn_lock);
+        }
+
+        let (domain, signup, selector) = db.get_server_config().unwrap();
+        assert_eq!(domain, "test.com");
+        assert!(signup);
+        assert_eq!(selector, "default");
+
+        db.update_server_config(Some("new.com"), Some(false), Some("sep2024"))
+            .unwrap();
+        let (domain, signup, selector) = db.get_server_config().unwrap();
+        assert_eq!(domain, "new.com");
+        assert!(!signup);
+        assert_eq!(selector, "sep2024");
+    }
+
+    #[test]
+    fn test_user_crud_lifecycle() {
+        let db = test_db();
+        // Seed config
+        seed_config(&db, "test.com");
+
+        // Create user
+        let user_id = db.create_user("alice@test.com", "hash123", true).unwrap();
+        assert!(user_id > 0);
+
+        // Get by email
+        let (id, hash, is_admin, disabled) =
+            db.get_user_by_email("alice@test.com").unwrap().unwrap();
+        assert_eq!(id, user_id);
+        assert_eq!(hash, "hash123");
+        assert!(is_admin);
+        assert!(!disabled);
+
+        // Get by id
+        let (email, is_admin, disabled) = db.get_user_by_id(user_id).unwrap().unwrap();
+        assert_eq!(email, "alice@test.com");
+        assert!(is_admin);
+        assert!(!disabled);
+
+        // List users
+        let users = db.list_users().unwrap();
+        assert_eq!(users.len(), 1);
+
+        // Disable user
+        assert!(db.disable_user(user_id).unwrap());
+        let (_, _, disabled) = db.get_user_by_id(user_id).unwrap().unwrap();
+        assert!(disabled);
+
+        // Disable again returns false (already disabled)
+        assert!(!db.disable_user(user_id).unwrap());
+
+        // Delete user
+        assert!(db.delete_user(user_id).unwrap());
+        assert!(db.get_user_by_email("alice@test.com").unwrap().is_none());
+
+        // Delete non-existent returns false
+        assert!(!db.delete_user(999).unwrap());
+    }
+
+    #[test]
+    fn test_token_lifecycle() {
+        let db = test_db();
+        seed_config(&db, "test.com");
+
+        let user_id = db.create_user("bob@test.com", "hash", false).unwrap();
+
+        // Create token
+        let token_id = db
+            .create_token(user_id, "tok_hash_1", "API Key", "send")
+            .unwrap();
+        assert!(token_id > 0);
+
+        // List user tokens
+        let tokens = db.list_user_tokens(user_id).unwrap();
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0].1, "API Key");
+        assert_eq!(tokens[0].2, "send");
+        assert!(!tokens[0].5); // not revoked
+
+        // List all tokens
+        let all = db.list_all_tokens().unwrap();
+        assert_eq!(all.len(), 1);
+
+        // Validate token
+        let result = db.validate_token("tok_hash_1").unwrap();
+        assert!(result.is_some());
+        let (tid, uid) = result.unwrap();
+        assert_eq!(tid, token_id);
+        assert_eq!(uid, user_id);
+
+        // Validate non-existent token
+        assert!(db.validate_token("bad_hash").unwrap().is_none());
+
+        // Revoke token
+        assert!(db.revoke_token(token_id).unwrap());
+        assert!(db.validate_token("tok_hash_1").unwrap().is_none());
+
+        // Revoke again returns false
+        assert!(!db.revoke_token(token_id).unwrap());
+    }
+
+    #[test]
+    fn test_session_lifecycle() {
+        let db = test_db();
+        seed_config(&db, "test.com");
+
+        let user_id = db.create_user("carol@test.com", "hash", false).unwrap();
+
+        // Create session
+        let session_id = db.create_session(user_id, now() + 3600).unwrap();
+        assert!(!session_id.is_empty());
+
+        // Validate session
+        let result = db.validate_session(&session_id).unwrap();
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), user_id);
+
+        // Delete session
+        assert!(db.delete_session(&session_id).unwrap());
+        assert!(db.validate_session(&session_id).unwrap().is_none());
+
+        // Delete non-existent returns false
+        assert!(!db.delete_session("nonexistent").unwrap());
+    }
+
+    #[test]
+    fn test_session_expiry() {
+        let db = test_db();
+        seed_config(&db, "test.com");
+
+        let user_id = db.create_user("dave@test.com", "hash", false).unwrap();
+        let session_id = db.create_session(user_id, now() - 1).unwrap(); // Already expired
+
+        assert!(db.validate_session(&session_id).unwrap().is_none());
+    }
+
+    #[test]
+    fn test_queue_lifecycle() {
+        let db = test_db();
+        seed_config(&db, "test.com");
+
+        let user_id = db.create_user("eve@test.com", "hash", false).unwrap();
+
+        // Enqueue messages
+        let id1 = db
+            .enqueue(user_id, "recipient1@example.com", "/path/to/msg1.eml")
+            .unwrap();
+        let id2 = db
+            .enqueue(user_id, "recipient2@example.com", "/path/to/msg2.eml")
+            .unwrap();
+
+        // Get pending
+        let pending = db.get_pending_messages(10).unwrap();
+        assert_eq!(pending.len(), 2);
+
+        // Mark delivered
+        db.mark_delivered(id1).unwrap();
+
+        // Stats
+        let (pending_count, delivered, dead) = db.queue_stats().unwrap();
+        assert_eq!(pending_count, 1);
+        assert_eq!(delivered, 1);
+        assert_eq!(dead, 0);
+
+        // Mark failed with exponential backoff
+        db.mark_failed(id2, "Connection refused", 5).unwrap();
+        // queue_stats counts by status, not by next_attempt_at
+        let (pending_count, _, _) = db.queue_stats().unwrap();
+        assert_eq!(pending_count, 1); // id2 is still pending (with future next_attempt_at)
+
+        // Fail enough times to dead-letter
+        for _ in 1..5 {
+            db.mark_failed(id2, "Still failing", 5).unwrap();
+        }
+        let (_, _, dead) = db.queue_stats().unwrap();
+        assert_eq!(dead, 1);
+
+        // List dead letters
+        let dead_letters = db.list_dead_letters().unwrap();
+        assert_eq!(dead_letters.len(), 1);
+
+        // Retry
+        assert!(db.retry_message(id2).unwrap());
+        let (pending, _, dead) = db.queue_stats().unwrap();
+        assert_eq!(pending, 1); // only id2 is pending again (id1 is delivered)
+        assert_eq!(dead, 0);
+
+        // Purge
+        assert!(db.purge_message(id1).unwrap());
+        assert!(!db.purge_message(999).unwrap());
+    }
+
+    #[test]
+    fn test_delivery_logs() {
+        let db = test_db();
+        seed_config(&db, "test.com");
+
+        let user_id = db.create_user("frank@test.com", "hash", false).unwrap();
+        let qid = db.enqueue(user_id, "r@example.com", "/path.eml").unwrap();
+
+        db.log_delivery(qid, "delivered", "r@example.com", None)
+            .unwrap();
+        db.log_delivery(qid, "bounced", "r2@example.com", Some("User unknown"))
+            .unwrap();
+
+        let logs = db.get_delivery_logs(10).unwrap();
+        assert_eq!(logs.len(), 2);
+    }
+
+    #[test]
+    fn test_filters_crud() {
+        let db = test_db();
+
+        let fid = db
+            .create_filter("block-spam", "/filters/block_spam.py", "[\"data\"]")
+            .unwrap();
+        assert!(fid > 0);
+
+        let filters = db.list_filters().unwrap();
+        assert_eq!(filters.len(), 1);
+
+        let f = db.get_filter(fid).unwrap();
+        assert_eq!(f.1, "block-spam");
+        assert!(f.4); // enabled
+
+        assert!(db.set_filter_enabled(fid, false).unwrap());
+        let f = db.get_filter(fid).unwrap();
+        assert!(!f.4);
+
+        assert!(db.delete_filter(fid).unwrap());
+        assert!(!db.delete_filter(999).unwrap());
+    }
+
+    #[test]
+    fn test_custom_domains() {
+        let db = test_db();
+        seed_config(&db, "test.com");
+
+        let user_id = db.create_user("grace@test.com", "hash", false).unwrap();
+
+        // Add domain
+        let domain_id = db.add_custom_domain(user_id, "grace.com").unwrap();
+        assert!(domain_id > 0);
+
+        // Not verified yet
+        assert!(!db.is_domain_allowed("grace.com"));
+        assert!(db.get_domain_owner("grace.com").is_none());
+
+        // List domains
+        let domains = db.list_custom_domains(user_id).unwrap();
+        assert_eq!(domains.len(), 1);
+        assert!(!domains[0].2); // not verified
+
+        // Verify
+        assert!(db.verify_custom_domain(domain_id).unwrap());
+        assert!(db.is_domain_allowed("grace.com"));
+        assert_eq!(db.get_domain_owner("grace.com").unwrap(), user_id);
+
+        // Mailbox user for domain
+        let mailbox = db
+            .get_mailbox_user_for_domain("grace.com", "info@grace.com")
+            .unwrap();
+        assert_eq!(mailbox, "grace"); // local part of owner's email
+
+        // Configured domain also works
+        assert!(db.is_domain_allowed("test.com"));
+
+        // Verified domains list
+        let verified = db.list_verified_domains();
+        assert_eq!(verified.len(), 1);
+
+        // Delete
+        assert!(db.delete_custom_domain(domain_id).unwrap());
+        assert!(!db.is_domain_allowed("grace.com"));
+    }
+
+    #[test]
+    fn test_uuid_format() {
+        let id = uuid_v4();
+        assert_eq!(id.len(), 36);
+        assert_eq!(id.chars().filter(|c| *c == '-').count(), 4);
+    }
+
+    #[test]
+    fn test_now_is_reasonable() {
+        let t = now();
+        assert!(t > 1700000000); // After Nov 2023
+        assert!(t < 2000000000); // Before 2033
+    }
+
+    /// Helper: seed server_config for tests
+    fn seed_config(db: &Database, domain: &str) {
+        let conn = db.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO server_config (id, domain, signup_enabled, dkim_selector) VALUES (1, ?1, 1, 'default')",
+            [domain],
+        )
+        .unwrap();
+    }
 }

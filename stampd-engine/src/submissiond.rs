@@ -714,3 +714,112 @@ fn base64_decode(input: &str) -> Option<Vec<u8>> {
 
     Some(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_address tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_parse_address_angle_brackets() {
+        assert_eq!(
+            parse_address("<user@domain.com>").unwrap(),
+            "user@domain.com"
+        );
+    }
+
+    #[test]
+    fn test_parse_address_without_brackets() {
+        assert_eq!(parse_address("user@domain.com").unwrap(), "user@domain.com");
+    }
+
+    #[test]
+    fn test_parse_address_empty_angle() {
+        assert!(parse_address("<>").is_err());
+    }
+
+    #[test]
+    fn test_parse_address_no_at() {
+        assert!(parse_address("<user>").is_err());
+    }
+
+    #[test]
+    fn test_parse_address_nothing() {
+        assert!(parse_address("").is_err());
+    }
+
+    #[test]
+    fn test_parse_address_with_extra_text() {
+        assert_eq!(
+            parse_address("<user@domain.com> extra").unwrap(),
+            "user@domain.com"
+        );
+    }
+
+    // ── base64_decode tests ────────────────────────────────────────
+
+    #[test]
+    fn test_base64_decode_hello() {
+        let decoded = base64_decode("SGVsbG8=").unwrap();
+        assert_eq!(decoded, b"Hello");
+    }
+
+    #[test]
+    fn test_base64_decode_test() {
+        let decoded = base64_decode("VGVzdA==").unwrap();
+        assert_eq!(decoded, b"Test");
+    }
+
+    #[test]
+    fn test_base64_decode_empty() {
+        let decoded = base64_decode("").unwrap();
+        assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn test_base64_decode_invalid_chars() {
+        assert!(base64_decode("!!!invalid!!!").is_none());
+    }
+
+    #[test]
+    fn test_base64_decode_with_padding() {
+        let decoded = base64_decode("YQ==").unwrap();
+        assert_eq!(decoded, b"a");
+    }
+
+    // ── verify_password tests ──────────────────────────────────────
+
+    #[test]
+    fn test_verify_password_correct() {
+        use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
+        use argon2::Argon2;
+
+        let salt = SaltString::generate(&mut OsRng);
+        let hash = Argon2::default()
+            .hash_password(b"mypassword", &salt)
+            .unwrap()
+            .to_string();
+
+        assert!(verify_password("mypassword", &hash));
+    }
+
+    #[test]
+    fn test_verify_password_wrong() {
+        use argon2::password_hash::{rand_core::OsRng, PasswordHasher, SaltString};
+        use argon2::Argon2;
+
+        let salt = SaltString::generate(&mut OsRng);
+        let hash = Argon2::default()
+            .hash_password(b"mypassword", &salt)
+            .unwrap()
+            .to_string();
+
+        assert!(!verify_password("wrongpassword", &hash));
+    }
+
+    #[test]
+    fn test_verify_password_invalid_hash() {
+        assert!(!verify_password("anything", "not-a-hash"));
+    }
+}

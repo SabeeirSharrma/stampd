@@ -229,7 +229,7 @@ import "../styles/global.css";
     document.getElementById("logout-btn")?.addEventListener("click", async () => {
       try { await apiLogout(); } catch {}
       setUser(null);
-      window.location.href = "/login";
+      window.location.href = "/";
     });
 
     loadTokens();

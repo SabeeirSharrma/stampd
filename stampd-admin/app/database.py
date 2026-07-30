@@ -5,6 +5,7 @@ The database path is configured via STAMPD_DB_PATH environment variable.
 """
 
 import os
+import secrets
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -22,6 +23,18 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
         yield db
     finally:
         await db.close()
+
+
+async def run_migrations():
+    """Apply lightweight schema migrations for existing databases."""
+    async with get_db() as db:
+        cursor = await db.execute("PRAGMA table_info(custom_domains)")
+        columns = {row["name"] for row in await cursor.fetchall()}
+        if "verification_token" not in columns:
+            await db.execute(
+                "ALTER TABLE custom_domains ADD COLUMN verification_token TEXT"
+            )
+            await db.commit()
 
 
 # ── User queries ───────────────────────────────────────────────────
@@ -288,19 +301,30 @@ async def list_custom_domains(user_id: int | None = None):
         return [dict(row) for row in rows]
 
 
-async def add_custom_domain(user_id: int, domain: str) -> int:
-    """Add a custom domain."""
+async def add_custom_domain(user_id: int, domain: str) -> tuple[int, str]:
+    """Add a custom domain. Returns (domain_id, verification_token)."""
+    token = f"stampd-verify-{secrets.token_hex(16)}"
     async with get_db() as db:
         cursor = await db.execute(
-            "INSERT INTO custom_domains (user_id, domain, verified) VALUES (?, ?, 0)",
-            (user_id, domain.lower()),
+            "INSERT INTO custom_domains (user_id, domain, verified, verification_token) VALUES (?, ?, 0, ?)",
+            (user_id, domain.lower(), token),
         )
         await db.commit()
-        return cursor.lastrowid
+        return cursor.lastrowid, token
+
+
+async def get_custom_domain(domain_id: int) -> dict | None:
+    """Get a custom domain by ID."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM custom_domains WHERE id = ?", (domain_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
 
 
 async def verify_custom_domain(domain_id: int) -> bool:
-    """Verify a custom domain."""
+    """Mark a custom domain as verified."""
     async with get_db() as db:
         cursor = await db.execute(
             "UPDATE custom_domains SET verified = 1 WHERE id = ?",
@@ -316,3 +340,34 @@ async def delete_custom_domain(domain_id: int) -> bool:
         cursor = await db.execute("DELETE FROM custom_domains WHERE id = ?", (domain_id,))
         await db.commit()
         return cursor.rowcount > 0
+
+
+# ── Auth validation queries ─────────────────────────────────────
+
+async def validate_session(session_id: str) -> dict | None:
+    """Validate a session and return user info if valid."""
+    import time
+
+    now = int(time.time())
+    async with get_db() as db:
+        cursor = await db.execute(
+            """SELECT u.id, u.email, u.is_admin
+               FROM sessions s JOIN users u ON s.user_id = u.id
+               WHERE s.id = ? AND s.expires_at > ? AND u.disabled_at IS NULL""",
+            (session_id, now),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def validate_token_hash(token_hash: str) -> dict | None:
+    """Validate a token hash and return user info if valid."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            """SELECT u.id, u.email, u.is_admin
+               FROM auth_tokens t JOIN users u ON t.user_id = u.id
+               WHERE t.token_hash = ? AND t.revoked_at IS NULL AND u.disabled_at IS NULL""",
+            (token_hash,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None

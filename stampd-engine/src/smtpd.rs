@@ -689,6 +689,118 @@ async fn read_message_body(reader: &mut (impl AsyncRead + Unpin), line: &mut Str
     body
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_mail_from tests ──────────────────────────────────────
+
+    #[test]
+    fn test_parse_mail_from_angle_brackets() {
+        assert_eq!(
+            parse_mail_from("<user@domain.com>").unwrap(),
+            "user@domain.com"
+        );
+    }
+
+    #[test]
+    fn test_parse_mail_from_with_spaces() {
+        assert_eq!(
+            parse_mail_from("< user@domain.com >").unwrap(),
+            "user@domain.com"
+        );
+    }
+
+    #[test]
+    fn test_parse_mail_from_bounce() {
+        assert_eq!(parse_mail_from("<>").unwrap(), "");
+    }
+
+    #[test]
+    fn test_parse_mail_from_missing_close() {
+        assert!(parse_mail_from("<user@domain.com").is_err());
+    }
+
+    #[test]
+    fn test_parse_mail_from_no_brackets() {
+        assert!(parse_mail_from("user@domain.com").is_err());
+    }
+
+    #[test]
+    fn test_parse_mail_from_empty() {
+        assert!(parse_mail_from("").is_err());
+    }
+
+    // ── parse_rcpt_to tests ────────────────────────────────────────
+
+    #[test]
+    fn test_parse_rcpt_to_valid() {
+        assert_eq!(
+            parse_rcpt_to("<user@domain.com>").unwrap(),
+            "user@domain.com"
+        );
+    }
+
+    #[test]
+    fn test_parse_rcpt_to_empty_address() {
+        assert!(parse_rcpt_to("<>").is_err());
+    }
+
+    #[test]
+    fn test_parse_rcpt_to_missing_close() {
+        assert!(parse_rcpt_to("<user@domain.com").is_err());
+    }
+
+    #[test]
+    fn test_parse_rcpt_to_no_brackets() {
+        assert!(parse_rcpt_to("user@domain.com").is_err());
+    }
+
+    // ── extract_address tests ──────────────────────────────────────
+
+    #[test]
+    fn test_extract_address_angle_brackets() {
+        assert_eq!(extract_address("<foo@bar.com>"), "foo@bar.com");
+    }
+
+    #[test]
+    fn test_extract_address_no_brackets() {
+        assert_eq!(extract_address("foo@bar.com"), "foo@bar.com");
+    }
+
+    #[test]
+    fn test_extract_address_with_comment() {
+        assert_eq!(extract_address("<foo@bar.com> (Comment)"), "foo@bar.com");
+    }
+
+    #[test]
+    fn test_extract_address_with_spaces() {
+        assert_eq!(extract_address(" <foo@bar.com> "), "foo@bar.com");
+    }
+
+    // ── extract_domain tests ───────────────────────────────────────
+
+    #[test]
+    fn test_extract_domain_valid() {
+        assert_eq!(extract_domain("user@domain.com"), "domain.com");
+    }
+
+    #[test]
+    fn test_extract_domain_uppercase() {
+        assert_eq!(extract_domain("User@UPPER.COM"), "upper.com");
+    }
+
+    #[test]
+    fn test_extract_domain_no_at() {
+        assert_eq!(extract_domain("no-at-sign"), "");
+    }
+
+    #[test]
+    fn test_extract_domain_empty() {
+        assert_eq!(extract_domain(""), "");
+    }
+}
+
 // ── Maildir Storage ──────────────────────────────────────────────
 
 async fn store_message(session: &SmtpSession, message: &[u8]) -> anyhow::Result<usize> {

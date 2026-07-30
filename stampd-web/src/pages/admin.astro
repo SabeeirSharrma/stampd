@@ -1,5 +1,6 @@
 ---
 import Base from "../layouts/Base.astro";
+import AdminPanel from "../components/react/AdminPanel";
 import "../styles/global.css";
 ---
 
@@ -7,7 +8,7 @@ import "../styles/global.css";
   <div class="min-h-screen bg-background">
     <header class="h-16 flex items-center justify-between px-6 border-b border-outline-variant bg-surface-container-lowest">
       <div class="flex items-center gap-4">
-        <a href="/" class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+        <a href="/inbox" class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </a>
         <h1 class="text-headline-sm font-semibold text-on-surface">Admin</h1>
@@ -17,290 +18,20 @@ import "../styles/global.css";
       </button>
     </header>
 
-    <div class="max-w-4xl mx-auto p-6 space-y-8">
-      <!-- Tabs -->
-      <nav class="flex gap-1 border-b border-outline-variant">
-        <button class="tab-btn px-4 py-3 text-label-md font-bold text-primary border-b-2 border-primary" data-tab="users">Users</button>
-        <button class="tab-btn px-4 py-3 text-label-md text-on-secondary-container hover:text-on-surface transition-colors" data-tab="config">Config</button>
-        <button class="tab-btn px-4 py-3 text-label-md text-on-secondary-container hover:text-on-surface transition-colors" data-tab="queue">Queue</button>
-        <button class="tab-btn px-4 py-3 text-label-md text-on-secondary-container hover:text-on-surface transition-colors" data-tab="logs">Logs</button>
-        <button class="tab-btn px-4 py-3 text-label-md text-on-secondary-container hover:text-on-surface transition-colors" data-tab="filters">Filters</button>
-      </nav>
-
-      <!-- Users Tab -->
-      <div class="tab-panel" id="tab-users">
-        <div class="bg-surface-container-low border border-outline-variant rounded-xl p-6">
-          <div id="users-list" class="space-y-3">Loading...</div>
-        </div>
-      </div>
-
-      <!-- Config Tab -->
-      <div class="tab-panel hidden" id="tab-config">
-        <div class="bg-surface-container-low border border-outline-variant rounded-xl p-6 space-y-5">
-          <div>
-            <label class="block text-label-md text-on-surface-variant mb-1.5">Domain</label>
-            <input id="cfg-domain" type="text" class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-3 text-body-md text-on-surface focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-colors" />
-          </div>
-          <div>
-            <label class="block text-label-md text-on-surface-variant mb-1.5">DKIM Selector</label>
-            <input id="cfg-dkim" type="text" class="w-full bg-surface-container border border-outline-variant rounded-lg px-4 py-3 text-body-md text-on-surface focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-colors" />
-          </div>
-          <div class="flex items-center gap-3">
-            <input id="cfg-signup" type="checkbox" class="w-4 h-4 rounded border-outline-variant text-primary focus:ring-primary/20" />
-            <label for="cfg-signup" class="text-body-md text-on-surface">Allow self-signup</label>
-          </div>
-          <button id="cfg-save" class="px-6 py-3 bg-primary-container text-on-primary-container rounded-lg font-bold text-label-md hover:opacity-90 transition-opacity">
-            Save Config
-          </button>
-          <div id="cfg-msg" class="hidden text-body-sm"></div>
-        </div>
-      </div>
-
-      <!-- Queue Tab -->
-      <div class="tab-panel hidden" id="tab-queue">
-        <div class="flex gap-3 mb-4">
-          <select id="queue-filter" class="bg-surface-container border border-outline-variant rounded-lg px-4 py-2.5 text-body-md text-on-surface focus:border-primary outline-none">
-            <option value="">All</option>
-            <option value="pending">Pending</option>
-            <option value="delivered">Delivered</option>
-            <option value="dead">Dead</option>
-          </select>
-        </div>
-        <div class="bg-surface-container-low border border-outline-variant rounded-xl p-6">
-          <div id="queue-list" class="space-y-3">Loading...</div>
-        </div>
-      </div>
-
-      <!-- Logs Tab -->
-      <div class="tab-panel hidden" id="tab-logs">
-        <div class="bg-surface-container-low border border-outline-variant rounded-xl p-6">
-          <div id="logs-list" class="space-y-3">Loading...</div>
-        </div>
-      </div>
-
-      <!-- Filters Tab -->
-      <div class="tab-panel hidden" id="tab-filters">
-        <div class="bg-surface-container-low border border-outline-variant rounded-xl p-6">
-          <div id="filters-list" class="space-y-3 mb-6">Loading...</div>
-          <div class="border-t border-outline-variant pt-6">
-            <h3 class="text-label-md font-bold text-on-surface mb-3">Add Filter</h3>
-            <div class="flex gap-3">
-              <input id="filter-name" type="text" placeholder="Name" class="flex-1 bg-surface-container border border-outline-variant rounded-lg px-4 py-2.5 text-body-md text-on-surface placeholder:text-on-secondary-container/50 focus:border-primary outline-none" />
-              <input id="filter-path" type="text" placeholder="Path" class="flex-1 bg-surface-container border border-outline-variant rounded-lg px-4 py-2.5 text-body-md text-on-surface placeholder:text-on-secondary-container/50 focus:border-primary outline-none" />
-              <button id="add-filter-btn" class="px-4 py-2.5 bg-primary-container text-on-primary-container rounded-lg font-bold text-label-md hover:opacity-90 transition-opacity">Add</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AdminPanel client:load />
   </div>
 
   <script>
-    import {
-      adminListUsers, adminDisableUser, adminDeleteUser,
-      adminGetConfig, adminUpdateConfig,
-      adminListQueue, adminRetryMessage, adminPurgeMessage,
-      adminListLogs, adminListFilters, adminCreateFilter, adminToggleFilter, adminDeleteFilter,
-      logout as apiLogout,
-    } from "../lib/api";
     import { requireAuth, setUser } from "../lib/auth";
+    import { logout as apiLogout } from "../lib/api";
 
     const user = requireAuth();
-    if (!user.is_admin) { window.location.href = "/"; throw new Error("Not admin"); }
+    if (!user.is_admin) { window.location.href = "/inbox"; throw new Error("Not admin"); }
 
-    // Tab switching
-    document.querySelectorAll(".tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".tab-btn").forEach((b) => {
-          b.classList.remove("text-primary", "font-bold", "border-b-2", "border-primary");
-          b.classList.add("text-on-secondary-container");
-        });
-        btn.classList.add("text-primary", "font-bold", "border-b-2", "border-primary");
-        btn.classList.remove("text-on-secondary-container");
-
-        document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
-        document.getElementById(`tab-${(btn as HTMLElement).dataset.tab}`)?.classList.remove("hidden");
-
-        // Load data for the tab
-        const tab = (btn as HTMLElement).dataset.tab;
-        if (tab === "users") loadUsers();
-        if (tab === "config") loadConfig();
-        if (tab === "queue") loadQueue();
-        if (tab === "logs") loadLogs();
-        if (tab === "filters") loadFilters();
-      });
-    });
-
-    // ── Users ──────────────────────────────────────────────
-    async function loadUsers() {
-      const el = document.getElementById("users-list")!;
-      try {
-        const users = await adminListUsers();
-        el.innerHTML = users.map((u) => `
-          <div class="flex items-center justify-between p-4 bg-surface-container rounded-lg border border-outline-variant">
-            <div>
-              <p class="text-body-md text-on-surface font-medium">${u.email}</p>
-              <p class="text-body-sm text-on-secondary-container">${u.is_admin ? "Admin" : "User"} ${u.disabled ? "&middot; Disabled" : ""}</p>
-            </div>
-            <div class="flex gap-2">
-              ${!u.disabled ? `<button class="text-body-sm text-error hover:underline disable-btn" data-id="${u.id}">Disable</button>` : ""}
-              <button class="text-body-sm text-error hover:underline delete-btn" data-id="${u.id}">Delete</button>
-            </div>
-          </div>
-        `).join("");
-
-        el.querySelectorAll(".disable-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            await adminDisableUser(Number((btn as HTMLElement).dataset.id));
-            loadUsers();
-          });
-        });
-        el.querySelectorAll(".delete-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            if (!confirm("Delete this user? This cannot be undone.")) return;
-            await adminDeleteUser(Number((btn as HTMLElement).dataset.id));
-            loadUsers();
-          });
-        });
-      } catch { el.innerHTML = `<p class="text-error">Failed to load users</p>`; }
-    }
-
-    // ── Config ─────────────────────────────────────────────
-    async function loadConfig() {
-      try {
-        const cfg = await adminGetConfig();
-        (document.getElementById("cfg-domain") as HTMLInputElement).value = cfg.domain;
-        (document.getElementById("cfg-dkim") as HTMLInputElement).value = cfg.dkim_selector;
-        (document.getElementById("cfg-signup") as HTMLInputElement).checked = cfg.signup_enabled === 1;
-      } catch {}
-    }
-
-    document.getElementById("cfg-save")?.addEventListener("click", async () => {
-      const msgEl = document.getElementById("cfg-msg")!;
-      try {
-        await adminUpdateConfig({
-          domain: (document.getElementById("cfg-domain") as HTMLInputElement).value,
-          dkim_selector: (document.getElementById("cfg-dkim") as HTMLInputElement).value,
-          signup_enabled: (document.getElementById("cfg-signup") as HTMLInputElement).checked,
-        });
-        msgEl.textContent = "Config saved";
-        msgEl.className = "text-body-sm text-primary";
-      } catch (err: any) {
-        msgEl.textContent = err.message || "Failed";
-        msgEl.className = "text-body-sm text-error";
-      }
-    });
-
-    // ── Queue ──────────────────────────────────────────────
-    async function loadQueue(status?: string) {
-      const el = document.getElementById("queue-list")!;
-      try {
-        const msgs = await adminListQueue(status);
-        if (msgs.length === 0) { el.innerHTML = `<p class="text-body-sm text-on-secondary-container">No messages</p>`; return; }
-        el.innerHTML = msgs.map((m) => `
-          <div class="flex items-center justify-between p-4 bg-surface-container rounded-lg border border-outline-variant">
-            <div class="flex-1 min-w-0">
-              <p class="text-body-md text-on-surface font-medium truncate">${m.recipient}</p>
-              <p class="text-body-sm text-on-secondary-container">Status: ${m.status} &middot; Attempts: ${m.attempts}${m.last_error ? ` &middot; Error: ${m.last_error}` : ""}</p>
-            </div>
-            <div class="flex gap-2 ml-4">
-              ${m.status === "dead" ? `<button class="text-body-sm text-primary hover:underline retry-btn" data-id="${m.id}">Retry</button>` : ""}
-              <button class="text-body-sm text-error hover:underline purge-btn" data-id="${m.id}">Purge</button>
-            </div>
-          </div>
-        `).join("");
-
-        el.querySelectorAll(".retry-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            await adminRetryMessage(Number((btn as HTMLElement).dataset.id));
-            loadQueue(status);
-          });
-        });
-        el.querySelectorAll(".purge-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            await adminPurgeMessage(Number((btn as HTMLElement).dataset.id));
-            loadQueue(status);
-          });
-        });
-      } catch { el.innerHTML = `<p class="text-error">Failed to load queue</p>`; }
-    }
-
-    document.getElementById("queue-filter")?.addEventListener("change", (e) => {
-      loadQueue((e.target as HTMLSelectElement).value || undefined);
-    });
-
-    // ── Logs ───────────────────────────────────────────────
-    async function loadLogs() {
-      const el = document.getElementById("logs-list")!;
-      try {
-        const logs = await adminListLogs({ limit: 50 });
-        if (logs.length === 0) { el.innerHTML = `<p class="text-body-sm text-on-secondary-container">No logs</p>`; return; }
-        el.innerHTML = logs.map((l) => `
-          <div class="p-3 bg-surface-container rounded-lg border border-outline-variant">
-            <div class="flex justify-between items-start">
-              <p class="text-body-md text-on-surface">${l.recipient}</p>
-              <span class="text-mono-sm ${l.status === "delivered" ? "text-primary" : "text-error"}">${l.status}</span>
-            </div>
-            ${l.error ? `<p class="text-body-sm text-error mt-1">${l.error}</p>` : ""}
-          </div>
-        `).join("");
-      } catch { el.innerHTML = `<p class="text-error">Failed to load logs</p>`; }
-    }
-
-    // ── Filters ────────────────────────────────────────────
-    async function loadFilters() {
-      const el = document.getElementById("filters-list")!;
-      try {
-        const filters = await adminListFilters();
-        if (filters.length === 0) { el.innerHTML = `<p class="text-body-sm text-on-secondary-container">No filters configured</p>`; return; }
-        el.innerHTML = filters.map((f) => `
-          <div class="flex items-center justify-between p-4 bg-surface-container rounded-lg border border-outline-variant">
-            <div>
-              <p class="text-body-md text-on-surface font-medium">${f.name}</p>
-              <p class="text-body-sm text-on-secondary-container">${f.hooks} &middot; ${f.enabled ? "Enabled" : "Disabled"}</p>
-            </div>
-            <div class="flex gap-3 items-center">
-              <button class="text-body-sm ${f.enabled ? "text-error" : "text-primary"} hover:underline toggle-btn" data-id="${f.id}" data-enabled="${f.enabled}">${f.enabled ? "Disable" : "Enable"}</button>
-              <button class="text-body-sm text-error hover:underline delete-filter-btn" data-id="${f.id}">Delete</button>
-            </div>
-          </div>
-        `).join("");
-
-        el.querySelectorAll(".toggle-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            const id = Number((btn as HTMLElement).dataset.id);
-            const enabled = (btn as HTMLElement).dataset.enabled === "true";
-            await adminToggleFilter(id, !enabled);
-            loadFilters();
-          });
-        });
-        el.querySelectorAll(".delete-filter-btn").forEach((btn) => {
-          btn.addEventListener("click", async () => {
-            if (!confirm("Delete this filter?")) return;
-            await adminDeleteFilter(Number((btn as HTMLElement).dataset.id));
-            loadFilters();
-          });
-        });
-      } catch { el.innerHTML = `<p class="text-error">Failed to load filters</p>`; }
-    }
-
-    document.getElementById("add-filter-btn")?.addEventListener("click", async () => {
-      const name = (document.getElementById("filter-name") as HTMLInputElement).value.trim();
-      const path = (document.getElementById("filter-path") as HTMLInputElement).value.trim();
-      if (!name || !path) return;
-      await adminCreateFilter(name, path, ["mail_from"]);
-      (document.getElementById("filter-name") as HTMLInputElement).value = "";
-      (document.getElementById("filter-path") as HTMLInputElement).value = "";
-      loadFilters();
-    });
-
-    // Logout
     document.getElementById("logout-btn")?.addEventListener("click", async () => {
       try { await apiLogout(); } catch {}
       setUser(null);
-      window.location.href = "/login";
+      window.location.href = "/";
     });
-
-    loadUsers();
   </script>
 </Base>
