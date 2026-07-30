@@ -5,11 +5,10 @@ The database path is configured via STAMPD_DB_PATH environment variable.
 """
 
 import os
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
 import aiosqlite
-
 
 DB_PATH = os.getenv("STAMPD_DB_PATH", "/var/lib/stampd/stampd.db")
 
@@ -136,7 +135,7 @@ async def update_server_config(updates: dict) -> bool:
     if not updates:
         return False
     async with get_db() as db:
-        set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values())
         cursor = await db.execute(
             f"UPDATE server_config SET {set_clause} WHERE id = 1",
@@ -170,7 +169,7 @@ async def get_quota_usage():
 
 # ── Queue queries ──────────────────────────────────────────────────
 
-async def list_queue_messages(status: str = None):
+async def list_queue_messages(status: str | None = None):
     """List queue messages."""
     async with get_db() as db:
         if status:
@@ -207,7 +206,7 @@ async def purge_message(msg_id: int) -> bool:
 
 # ── Delivery log queries ───────────────────────────────────────────
 
-async def get_delivery_logs(status: str = None, recipient: str = None, limit: int = 50):
+async def get_delivery_logs(status: str | None = None, recipient: str | None = None, limit: int = 50):
     """Get delivery logs with optional filters."""
     async with get_db() as db:
         query = "SELECT * FROM delivery_logs WHERE 1=1"
@@ -275,7 +274,7 @@ async def delete_filter(filter_id: int) -> bool:
 
 # ── Custom domain queries ─────────────────────────────────────────
 
-async def list_custom_domains(user_id: int = None):
+async def list_custom_domains(user_id: int | None = None):
     """List custom domains, optionally filtered by user."""
     async with get_db() as db:
         if user_id:
