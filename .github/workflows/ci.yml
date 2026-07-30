@@ -9,7 +9,7 @@ env:
 
 jobs:
   rust:
-    name: Rust
+    name: Rust (Linux)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +35,32 @@ jobs:
 
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Build
+        run: cargo build --verbose --release
+
+      - name: Test
+        run: cargo test --verbose
+
+  rust-windows:
+    name: Rust (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Build
         run: cargo build --verbose --release
@@ -85,7 +111,7 @@ jobs:
 
   release:
     name: Release
-    needs: [rust, gateway, admin]
+    needs: [rust, rust-windows, gateway, admin]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -106,10 +132,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Build release binary
+      - name: Build release binary (Linux)
         run: cargo build --release --bin stampd-engine
 
-      - name: Package binary
+      - name: Package binary (Linux)
         run: |
           tar -czf stampd-engine-${{ github.ref_name }}-linux-x86_64.tar.gz \
             -C target/release stampd-engine
@@ -120,3 +146,39 @@ jobs:
           generate_release_notes: true
           files: |
             stampd-engine-${{ github.ref_name }}-linux-x86_64.tar.gz
+
+  release-windows:
+    name: Release (Windows)
+    needs: [rust-windows]
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build release binary (Windows)
+        run: cargo build --release --bin stampd-engine
+
+      - name: Package binary (Windows)
+        run: |
+          Compress-Archive -Path target/release/stampd-engine.exe -DestinationPath stampd-engine-${{ github.ref_name }}-windows-x86_64.zip
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            stampd-engine-${{ github.ref_name }}-windows-x86_64.zip

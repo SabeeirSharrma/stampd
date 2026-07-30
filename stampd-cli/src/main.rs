@@ -1,5 +1,6 @@
 mod config;
 mod supervisor;
+mod update;
 
 use anyhow::Result;
 use tracing::info;
@@ -42,6 +43,9 @@ async fn main() -> Result<()> {
         Some("init") => {
             cmd_init().await?;
         }
+        Some("update") => {
+            update::cmd_update().await?;
+        }
         _ => {
             print_usage();
         }
@@ -61,6 +65,7 @@ fn print_usage() {
     println!("  stampd status                     Show running services");
     println!("  stampd logs [service]             Show service logs");
     println!("  stampd init                       Initialize configuration");
+    println!("  stampd update                     Update to latest version");
     println!();
     println!("Services: engine, gateway, admin, web");
     println!();
@@ -70,6 +75,7 @@ fn print_usage() {
     println!("  stampd down                       # Stop everything");
     println!("  stampd status                     # Check what's running");
     println!("  stampd logs gateway               # Watch gateway logs");
+    println!("  stampd update                     # Check for and install updates");
 }
 
 async fn cmd_up(only: Option<Vec<String>>) -> Result<()> {
@@ -86,8 +92,8 @@ async fn cmd_up(only: Option<Vec<String>>) -> Result<()> {
         "Starting services"
     );
 
-    let pid_dir = std::path::PathBuf::from("/var/run/stampd");
-    let log_dir = std::path::PathBuf::from("/var/log/stampd");
+    let pid_dir = config::default_pid_dir();
+    let log_dir = config::default_log_dir();
 
     let mut sup = supervisor::Supervisor::new(pid_dir, log_dir);
 
@@ -109,8 +115,8 @@ async fn cmd_down() -> Result<()> {
     let config = config::load_config("stampd.toml")?;
     let services = config.build_service_list(None);
 
-    let pid_dir = std::path::PathBuf::from("/var/run/stampd");
-    let log_dir = std::path::PathBuf::from("/var/log/stampd");
+    let pid_dir = config::default_pid_dir();
+    let log_dir = config::default_log_dir();
 
     let mut sup = supervisor::Supervisor::new(pid_dir, log_dir);
     for service in &services {
@@ -128,8 +134,8 @@ async fn cmd_status() -> Result<()> {
     let config = config::load_config("stampd.toml")?;
     let services = config.build_service_list(None);
 
-    let pid_dir = std::path::PathBuf::from("/var/run/stampd");
-    let log_dir = std::path::PathBuf::from("/var/log/stampd");
+    let pid_dir = config::default_pid_dir();
+    let log_dir = config::default_log_dir();
 
     let sup = supervisor::Supervisor::new(pid_dir, log_dir);
     let mut sup_with_services = sup;
@@ -155,21 +161,14 @@ async fn cmd_status() -> Result<()> {
 }
 
 async fn cmd_logs(service: Option<&str>) -> Result<()> {
-    let log_dir = std::path::PathBuf::from("/var/log/stampd");
+    let log_dir = config::default_log_dir();
 
     match service {
         Some(svc) => {
             let log_file = log_dir.join(format!("{}.stderr.log", svc));
             if log_file.exists() {
                 println!("=== {} logs (tail) ===", svc);
-                // Use tail -f to follow logs
-                let output = std::process::Command::new("tail")
-                    .args(["-n", "50", "-f", &log_file.to_string_lossy()])
-                    .status();
-                match output {
-                    Ok(_) => {}
-                    Err(e) => println!("Failed to tail logs: {}", e),
-                }
+                tail_log_file(&log_file);
             } else {
                 println!("No logs found for service: {}", svc);
             }
@@ -194,6 +193,34 @@ async fn cmd_logs(service: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+fn tail_log_file(log_file: &std::path::Path) {
+    let path_str = log_file.to_string_lossy();
+    #[cfg(unix)]
+    {
+        let output = std::process::Command::new("tail")
+            .args(["-n", "50", "-f", &path_str])
+            .status();
+        match output {
+            Ok(_) => {}
+            Err(e) => println!("Failed to tail logs: {}", e),
+        }
+    }
+    #[cfg(windows)]
+    {
+        let output = std::process::Command::new("powershell")
+            .args([
+                "-NoProfile",
+                "-Command",
+                &format!("Get-Content -Path '{}' -Wait -Tail 50", path_str),
+            ])
+            .status();
+        match output {
+            Ok(_) => {}
+            Err(e) => println!("Failed to tail logs (is PowerShell available?): {}", e),
+        }
+    }
+}
+
 async fn cmd_init() -> Result<()> {
     let config_path = std::path::Path::new("stampd.toml");
     if config_path.exists() {
@@ -201,15 +228,16 @@ async fn cmd_init() -> Result<()> {
         return Ok(());
     }
 
-    // Create default config
-    let default_config = r#"# Stampd Configuration
+    let data_dir = config::stampd_data_dir();
+    let default_config = format!(
+        r#"# Stampd Configuration
 # See https://sabeeir.qd.je/stampd for full documentation
 
 [engine]
 smtp_port = 25
 submission_port = 587
-maildir_path = "/var/lib/stampd/mail"
-db_path = "/var/lib/stampd/stampd.db"
+maildir_path = "{data_dir}/mail"
+db_path = "{data_dir}/stampd.db"
 dkim_selector = "default"
 api_port = 8090
 
@@ -218,10 +246,10 @@ api_port = 8090
 # tls_key_path = "/etc/stampd/tls/key.pem"
 
 # DKIM key storage directory
-dkim_key_dir = "/var/lib/stampd/dkim"
+dkim_key_dir = "{data_dir}/dkim"
 
 # Filter scripts directory
-filters_dir = "/var/lib/stampd/filters"
+filters_dir = "{data_dir}/filters"
 filters_timeout_ms = 500
 
 # Gateway URL for Transit filter delegation (optional)
@@ -248,7 +276,9 @@ port = 3000
 [filters]
 enabled = true
 timeout_ms = 500
-"#;
+"#,
+        data_dir = data_dir.display()
+    );
 
     std::fs::write(config_path, default_config)?;
     println!("Created stampd.toml with default configuration.");

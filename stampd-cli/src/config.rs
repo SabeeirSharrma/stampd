@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -51,7 +52,10 @@ fn default_submission_port() -> u16 {
 }
 #[allow(dead_code)]
 fn default_maildir_path() -> String {
-    "/var/lib/stampd/mail".to_string()
+    stampd_data_dir()
+        .join("mail")
+        .to_string_lossy()
+        .into_owned()
 }
 #[allow(dead_code)]
 fn default_dkim_selector() -> String {
@@ -64,6 +68,83 @@ fn default_true() -> bool {
 #[allow(dead_code)]
 fn default_timeout_ms() -> u64 {
     500
+}
+
+#[allow(dead_code)]
+pub fn stampd_data_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("stampd")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("/var/lib/stampd")
+    }
+}
+
+#[allow(dead_code)]
+pub fn default_pid_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        dirs::runtime_dir()
+            .or_else(|| dirs::data_local_dir())
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("stampd")
+            .join("run")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("/var/run/stampd")
+    }
+}
+
+#[allow(dead_code)]
+pub fn default_log_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("stampd")
+            .join("logs")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("/var/log/stampd")
+    }
+}
+
+fn engine_binary_name() -> &'static str {
+    #[cfg(windows)]
+    {
+        "stampd-engine.exe"
+    }
+    #[cfg(not(windows))]
+    {
+        "stampd-engine"
+    }
+}
+
+fn find_engine_binary() -> String {
+    // Try to find stampd-engine next to the current executable first
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join(engine_binary_name());
+            if candidate.exists() {
+                return candidate.to_string_lossy().into_owned();
+            }
+        }
+    }
+    // Fall back to relative path
+    #[cfg(windows)]
+    {
+        ".\\target\\debug\\stampd-engine.exe".to_string()
+    }
+    #[cfg(not(windows))]
+    {
+        "./target/debug/stampd-engine".to_string()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -95,43 +176,62 @@ impl StampdConfig {
         if is_enabled("engine") {
             services.push(ServiceConfig {
                 name: "engine".to_string(),
-                command: "./target/debug/stampd-engine".to_string(),
+                command: find_engine_binary(),
                 args: vec!["stampd.toml".to_string()],
                 enabled: true,
             });
         }
 
         if is_enabled("gateway") {
+            let (cmd, cmd_args) = if cfg!(windows) {
+                ("bun.cmd".to_string(), vec!["run".to_string()])
+            } else {
+                ("bun".to_string(), vec!["run".to_string()])
+            };
             services.push(ServiceConfig {
                 name: "gateway".to_string(),
-                command: "bun".to_string(),
-                args: vec!["run".to_string(), "stampd-gateway/src/index.ts".to_string()],
+                command: cmd,
+                args: [cmd_args, vec!["stampd-gateway/src/index.ts".to_string()]].concat(),
                 enabled: true,
             });
         }
 
         if is_enabled("admin") {
+            let (cmd, host_args) = if cfg!(windows) {
+                ("python".to_string(), vec![])
+            } else {
+                ("python3".to_string(), vec![])
+            };
             services.push(ServiceConfig {
                 name: "admin".to_string(),
-                command: "python3".to_string(),
-                args: vec![
-                    "-m".to_string(),
-                    "uvicorn".to_string(),
-                    "app.main:app".to_string(),
-                    "--host".to_string(),
-                    "0.0.0.0".to_string(),
-                    "--port".to_string(),
-                    "8081".to_string(),
-                ],
+                command: cmd,
+                args: [
+                    host_args,
+                    vec![
+                        "-m".to_string(),
+                        "uvicorn".to_string(),
+                        "app.main:app".to_string(),
+                        "--host".to_string(),
+                        "0.0.0.0".to_string(),
+                        "--port".to_string(),
+                        "8081".to_string(),
+                    ],
+                ]
+                .concat(),
                 enabled: true,
             });
         }
 
         if is_enabled("web") {
+            let (cmd, cmd_args) = if cfg!(windows) {
+                ("bun.cmd".to_string(), vec!["run".to_string()])
+            } else {
+                ("bun".to_string(), vec!["run".to_string()])
+            };
             services.push(ServiceConfig {
                 name: "web".to_string(),
-                command: "bun".to_string(),
-                args: vec!["run".to_string(), "stampd-web/src/index.ts".to_string()],
+                command: cmd,
+                args: [cmd_args, vec!["stampd-web/src/index.ts".to_string()]].concat(),
                 enabled: true,
             });
         }

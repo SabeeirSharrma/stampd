@@ -39,6 +39,7 @@ base64.workspace = true
 reqwest.workspace = true
 argon2.workspace = true
 getrandom.workspace = true
+dirs.workspace = true
 
 [build-dependencies]
 napi-build = { version = "2", optional = true }

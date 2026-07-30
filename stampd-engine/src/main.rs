@@ -11,6 +11,13 @@ use stampd_engine::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Check for --version flag
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--version" || a == "-v") {
+        println!("stampd-engine v{}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -172,29 +179,31 @@ async fn main() -> anyhow::Result<()> {
         config_path.clone(),
     ));
 
-    // SIGHUP handler — reload config
-    let sighup_config = config_for_reload;
-    let sighup_path = config_path_for_reload;
-    tokio::spawn(async move {
-        loop {
-            // Wait for SIGHUP (using signal_hook)
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
-                .expect("Failed to register SIGHUP handler")
-                .recv()
-                .await;
-            info!("Received SIGHUP, reloading configuration...");
-            match Config::load(&sighup_path) {
-                Ok(new_config) => {
-                    let mut cfg = sighup_config.write().await;
-                    *cfg = new_config;
-                    info!("Configuration reloaded via SIGHUP");
-                }
-                Err(e) => {
-                    error!("Failed to reload config via SIGHUP: {}", e);
+    // SIGHUP handler — reload config (Unix only)
+    #[cfg(unix)]
+    {
+        let sighup_config = config_for_reload;
+        let sighup_path = config_path_for_reload;
+        tokio::spawn(async move {
+            loop {
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup())
+                    .expect("Failed to register SIGHUP handler")
+                    .recv()
+                    .await;
+                info!("Received SIGHUP, reloading configuration...");
+                match Config::load(&sighup_path) {
+                    Ok(new_config) => {
+                        let mut cfg = sighup_config.write().await;
+                        *cfg = new_config;
+                        info!("Configuration reloaded via SIGHUP");
+                    }
+                    Err(e) => {
+                        error!("Failed to reload config via SIGHUP: {}", e);
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 
     info!("Stampd engine started");
 

@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
@@ -40,12 +40,28 @@ pub struct EngineConfig {
     pub gateway_url: Option<String>,
 }
 
+fn stampd_data_dir() -> PathBuf {
+    #[cfg(windows)]
+    {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("stampd")
+    }
+    #[cfg(not(windows))]
+    {
+        PathBuf::from("/var/lib/stampd")
+    }
+}
+
 fn default_domain() -> String {
     "localhost".to_string()
 }
 
 fn default_db_path() -> String {
-    "/var/lib/stampd/stampd.db".to_string()
+    stampd_data_dir()
+        .join("stampd.db")
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn default_api_port() -> u16 {
@@ -53,11 +69,17 @@ fn default_api_port() -> u16 {
 }
 
 fn default_dkim_key_dir() -> String {
-    "/var/lib/stampd/dkim".to_string()
+    stampd_data_dir()
+        .join("dkim")
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn default_filters_dir() -> String {
-    "/var/lib/stampd/filters".to_string()
+    stampd_data_dir()
+        .join("filters")
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn default_filters_timeout_ms() -> u64 {

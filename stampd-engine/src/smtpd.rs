@@ -689,6 +689,60 @@ async fn read_message_body(reader: &mut (impl AsyncRead + Unpin), line: &mut Str
     body
 }
 
+// ── Maildir Storage ──────────────────────────────────────────────
+
+async fn store_message(session: &SmtpSession, message: &[u8]) -> anyhow::Result<usize> {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut count = 0;
+
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let message_id = format!(
+        "{}.{:05}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis(),
+        seq % 100000,
+        std::process::id()
+    );
+
+    for recipient in &session.rcpt_to {
+        let local_part = recipient.split('@').next().unwrap_or("unknown");
+        let rcpt_domain = recipient.split('@').nth(1).unwrap_or("");
+
+        // For custom domains, route to the domain owner's mailbox
+        let mailbox_user = session
+            .db
+            .get_mailbox_user_for_domain(rcpt_domain, recipient)
+            .unwrap_or_else(|| local_part.to_string());
+
+        let user_dir = std::path::Path::new(&session.maildir_path)
+            .join(&session.domain)
+            .join(&mailbox_user);
+
+        for subdir in &["cur", "new", "tmp", "sent", "drafts", "archive", "spam"] {
+            tokio::fs::create_dir_all(user_dir.join(subdir)).await?;
+        }
+
+        let hostname = hostname::get()
+            .map(|h| h.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "localhost".to_string());
+
+        let filename = format!("{}.{}.{}:2,", message_id, std::process::id(), hostname);
+
+        let filepath = user_dir.join("new").join(&filename);
+
+        tokio::fs::write(&filepath, message).await?;
+        info!(
+            recipient = %recipient,
+            path = %filepath.display(),
+            "Stored message in Maildir"
+        );
+        count += 1;
+    }
+
+    Ok(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -799,58 +853,4 @@ mod tests {
     fn test_extract_domain_empty() {
         assert_eq!(extract_domain(""), "");
     }
-}
-
-// ── Maildir Storage ──────────────────────────────────────────────
-
-async fn store_message(session: &SmtpSession, message: &[u8]) -> anyhow::Result<usize> {
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let mut count = 0;
-
-    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let message_id = format!(
-        "{}.{:05}.{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)?
-            .as_millis(),
-        seq % 100000,
-        std::process::id()
-    );
-
-    for recipient in &session.rcpt_to {
-        let local_part = recipient.split('@').next().unwrap_or("unknown");
-        let rcpt_domain = recipient.split('@').nth(1).unwrap_or("");
-
-        // For custom domains, route to the domain owner's mailbox
-        let mailbox_user = session
-            .db
-            .get_mailbox_user_for_domain(rcpt_domain, recipient)
-            .unwrap_or_else(|| local_part.to_string());
-
-        let user_dir = std::path::Path::new(&session.maildir_path)
-            .join(&session.domain)
-            .join(&mailbox_user);
-
-        for subdir in &["cur", "new", "tmp", "sent", "drafts", "archive", "spam"] {
-            tokio::fs::create_dir_all(user_dir.join(subdir)).await?;
-        }
-
-        let hostname = hostname::get()
-            .map(|h| h.to_string_lossy().to_string())
-            .unwrap_or_else(|_| "localhost".to_string());
-
-        let filename = format!("{}.{}.{}:2,", message_id, std::process::id(), hostname);
-
-        let filepath = user_dir.join("new").join(&filename);
-
-        tokio::fs::write(&filepath, message).await?;
-        info!(
-            recipient = %recipient,
-            path = %filepath.display(),
-            "Stored message in Maildir"
-        );
-        count += 1;
-    }
-
-    Ok(count)
 }

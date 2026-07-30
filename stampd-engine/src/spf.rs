@@ -135,6 +135,68 @@ fn evaluate_spf(record: &str, sender_ip: IpAddr) -> bool {
     true
 }
 
+fn parse_cidr(cidr: &str) -> Option<(IpAddr, u32)> {
+    let parts: Vec<&str> = cidr.split('/').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let ip: IpAddr = parts[0].parse().ok()?;
+    let prefix: u32 = parts[1].parse().ok()?;
+    Some((ip, prefix))
+}
+
+fn parse_cidr_v6(cidr: &str) -> Option<(IpAddr, u32)> {
+    let parts: Vec<&str> = cidr.split('/').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let ip: IpAddr = parts[0].parse().ok()?;
+    let prefix: u32 = parts[1].parse().ok()?;
+    Some((ip, prefix))
+}
+
+fn sender_ip_matches(sender_ip: IpAddr, network: IpAddr, prefix: u32) -> bool {
+    match (sender_ip, network) {
+        (IpAddr::V4(s), IpAddr::V4(n)) => {
+            let s = s.octets();
+            let n = n.octets();
+            let mask = !0u32 << (32 - prefix);
+            let s_int = u32::from_be_bytes(s);
+            let n_int = u32::from_be_bytes(n);
+            (s_int & mask) == (n_int & mask)
+        }
+        _ => false,
+    }
+}
+
+fn sender_ip_matches_v6(sender_ip: IpAddr, network: IpAddr, prefix: u32) -> bool {
+    match (sender_ip, network) {
+        (IpAddr::V6(s), IpAddr::V6(n)) => {
+            let s = s.octets();
+            let n = n.octets();
+            let full_prefix = prefix as usize;
+            let bytes_to_check = full_prefix / 8;
+            let bits_remaining = full_prefix % 8;
+
+            if bytes_to_check < 16 {
+                for i in 0..bytes_to_check {
+                    if s[i] != n[i] {
+                        return false;
+                    }
+                }
+                if bits_remaining > 0 {
+                    let mask = !0u8 << (8 - bits_remaining);
+                    if (s[bytes_to_check] & mask) != (n[bytes_to_check] & mask) {
+                        return false;
+                    }
+                }
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -251,67 +313,5 @@ mod tests {
         let record = "v=spf1";
         let ip = IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4));
         assert!(evaluate_spf(record, ip)); // default neutral = pass
-    }
-}
-
-fn parse_cidr(cidr: &str) -> Option<(IpAddr, u32)> {
-    let parts: Vec<&str> = cidr.split('/').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let ip: IpAddr = parts[0].parse().ok()?;
-    let prefix: u32 = parts[1].parse().ok()?;
-    Some((ip, prefix))
-}
-
-fn parse_cidr_v6(cidr: &str) -> Option<(IpAddr, u32)> {
-    let parts: Vec<&str> = cidr.split('/').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-    let ip: IpAddr = parts[0].parse().ok()?;
-    let prefix: u32 = parts[1].parse().ok()?;
-    Some((ip, prefix))
-}
-
-fn sender_ip_matches(sender_ip: IpAddr, network: IpAddr, prefix: u32) -> bool {
-    match (sender_ip, network) {
-        (IpAddr::V4(s), IpAddr::V4(n)) => {
-            let s = s.octets();
-            let n = n.octets();
-            let mask = !0u32 << (32 - prefix);
-            let s_int = u32::from_be_bytes(s);
-            let n_int = u32::from_be_bytes(n);
-            (s_int & mask) == (n_int & mask)
-        }
-        _ => false,
-    }
-}
-
-fn sender_ip_matches_v6(sender_ip: IpAddr, network: IpAddr, prefix: u32) -> bool {
-    match (sender_ip, network) {
-        (IpAddr::V6(s), IpAddr::V6(n)) => {
-            let s = s.octets();
-            let n = n.octets();
-            let full_prefix = prefix as usize;
-            let bytes_to_check = full_prefix / 8;
-            let bits_remaining = full_prefix % 8;
-
-            if bytes_to_check < 16 {
-                for i in 0..bytes_to_check {
-                    if s[i] != n[i] {
-                        return false;
-                    }
-                }
-                if bits_remaining > 0 {
-                    let mask = !0u8 << (8 - bits_remaining);
-                    if (s[bytes_to_check] & mask) != (n[bytes_to_check] & mask) {
-                        return false;
-                    }
-                }
-            }
-            true
-        }
-        _ => false,
     }
 }

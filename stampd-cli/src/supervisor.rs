@@ -164,9 +164,7 @@ impl Supervisor {
         for (name, child) in &mut self.children {
             if let Some(pid) = child.id() {
                 info!(service = %name, pid = pid, "Sending SIGTERM");
-                unsafe {
-                    libc::kill(pid as i32, libc::SIGTERM);
-                }
+                terminate_process(pid);
             }
         }
 
@@ -205,15 +203,11 @@ impl Supervisor {
             if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
                 if let Ok(pid) = pid_str.trim().parse::<u32>() {
                     info!(service = %service.name, pid = pid, "Stopping service");
-                    unsafe {
-                        libc::kill(pid as i32, libc::SIGTERM);
-                    }
+                    terminate_process(pid);
                     // Wait briefly for graceful shutdown
                     tokio::time::sleep(Duration::from_millis(500)).await;
                     // Force kill if still running
-                    unsafe {
-                        libc::kill(pid as i32, libc::SIGKILL);
-                    }
+                    force_kill_process(pid);
                 }
             }
             let _ = std::fs::remove_file(&pid_file);
@@ -252,8 +246,52 @@ pub enum ServiceStatus {
     Unknown,
 }
 
+#[cfg(unix)]
+fn terminate_process(pid: u32) {
+    unsafe {
+        libc::kill(pid as i32, libc::SIGTERM);
+    }
+}
+
+#[cfg(unix)]
+fn force_kill_process(pid: u32) {
+    unsafe {
+        libc::kill(pid as i32, libc::SIGKILL);
+    }
+}
+
+#[cfg(windows)]
+fn terminate_process(pid: u32) {
+    use std::process::Command;
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T"])
+        .output();
+}
+
+#[cfg(windows)]
+fn force_kill_process(pid: u32) {
+    use std::process::Command;
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .output();
+}
+
+#[cfg(unix)]
 fn is_process_running(pid: u32) -> bool {
     unsafe { libc::kill(pid as i32, 0) == 0 }
+}
+
+#[cfg(windows)]
+fn is_process_running(pid: u32) -> bool {
+    use std::process::Command;
+    Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {}", pid), "/NH"])
+        .output()
+        .map(|out| {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            stdout.contains(&pid.to_string())
+        })
+        .unwrap_or(false)
 }
 
 fn calculate_backoff(attempt: u32) -> Duration {
