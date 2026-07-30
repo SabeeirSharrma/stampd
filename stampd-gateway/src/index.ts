@@ -28,6 +28,88 @@ async function createApp(): Promise<FastifyInstance> {
     timeWindow: '1 minute',
   })
 
+  // ── Swagger/OpenAPI ────────────────────────────────────────────
+  await app.register((await import('@fastify/swagger')).default, {
+    openapi: {
+      info: {
+        title: 'Stampd API',
+        description: 'Self-hosted mail server API',
+        version: '0.7.0',
+      },
+      servers: [
+        { url: 'http://localhost:8080', description: 'Development' },
+      ],
+      components: {
+        securitySchemes: {
+          cookieAuth: {
+            type: 'apiKey',
+            in: 'cookie',
+            name: 'stampd-session',
+            description: 'Session cookie from web UI login',
+          },
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            description: 'API token for programmatic access',
+          },
+        },
+        schemas: {
+          Error: {
+            type: 'object',
+            properties: {
+              error: { type: 'string' },
+            },
+          },
+          OkResponse: {
+            type: 'object',
+            properties: {
+              ok: { type: 'boolean' },
+            },
+          },
+          MailboxMessage: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              from: { type: 'string' },
+              to: { type: 'string' },
+              subject: { type: 'string' },
+              date: { type: 'string', format: 'date-time' },
+              size: { type: 'number' },
+              folder: { type: 'string' },
+            },
+          },
+          MailboxMessageDetail: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              from: { type: 'string' },
+              to: { type: 'string' },
+              subject: { type: 'string' },
+              date: { type: 'string', format: 'date-time' },
+              size: { type: 'number' },
+              headers: { type: 'object', additionalProperties: { type: 'string' } },
+              body: { type: 'string' },
+              folder: { type: 'string' },
+              isDraft: { type: 'boolean' },
+            },
+          },
+        },
+      },
+      security: [
+        { cookieAuth: [] },
+        { bearerAuth: [] },
+      ],
+    },
+  })
+
+  await app.register((await import('@fastify/swagger-ui')).default, {
+    routePrefix: '/docs',
+    uiConfig: {
+      docExpansion: 'list',
+      deepLinking: true,
+    },
+  })
+
   // ── Health ─────────────────────────────────────────────────────
   app.get('/health', async () => {
     return { status: 'ok', service: 'stampd-gateway' }
@@ -55,6 +137,7 @@ const start = async () => {
   try {
     await app.listen({ port, host: '0.0.0.0' })
     console.log(`stampd-gateway listening on port ${port}`)
+    console.log(`API docs available at http://localhost:${port}/docs`)
   } catch (err) {
     app.log.error(err)
     process.exit(1)

@@ -60,7 +60,44 @@ export default async function sendRoutes(app: FastifyInstance) {
       body: string
       from?: string
     }
-  }>('/messages/send', { preHandler: requireAuth }, async (req, reply) => {
+  }>('/messages/send', {
+    preHandler: requireAuth,
+    schema: {
+      description: 'Send an email message',
+      tags: ['messages'],
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['to', 'body'],
+        properties: {
+          to: { type: 'string', format: 'email', description: 'Recipient email address' },
+          subject: { type: 'string', description: 'Message subject' },
+          body: { type: 'string', description: 'Message body (plain text)' },
+          from: { type: 'string', format: 'email', description: 'Sender override (must be from allowed domain)' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'number' },
+            status: { type: 'string', enum: ['delivered'] },
+            recipient: { type: 'string' },
+          },
+        },
+        202: {
+          type: 'object',
+          properties: {
+            id: { type: 'number' },
+            status: { type: 'string', enum: ['queued'] },
+            recipient: { type: 'string' },
+          },
+        },
+        400: { $ref: 'Error' },
+        401: { $ref: 'Error' },
+      },
+    },
+  }, async (req, reply) => {
     const user = (req as any).user
 
     const { to, subject, body, from } = req.body || {}

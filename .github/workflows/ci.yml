@@ -50,16 +50,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Bun
-        uses: oven-sh/setup-bun@v2
-
       - name: Install dependencies
         working-directory: stampd-gateway
-        run: bun install
+        run: npm install
 
       - name: Type check
         working-directory: stampd-gateway
-        run: bun run tsc --noEmit
+        run: npm run tsc --noEmit
 
   admin:
     name: Admin

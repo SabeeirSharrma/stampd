@@ -5,12 +5,15 @@
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "start": "bun run src/index.ts"
+    "start": "bun run src/index.ts",
+    "docs:build": "bun run src/scripts/build-docs.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^10.0.0",
     "@fastify/rate-limit": "^10.0.0",
+    "@fastify/swagger": "^9.0.0",
+    "@fastify/swagger-ui": "^5.0.0",
     "@sabeeirsharrma/transit": "^2.4.0",
     "argon2": "^0.45.0",
     "fastify": "^5.0.0",

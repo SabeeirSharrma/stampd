@@ -114,7 +114,32 @@ function generateFilename(): string {
 export default async function mailboxRoutes(app: FastifyInstance) {
 
   // ── GET /mailbox/messages?folder=inbox|sent|archive|spam ──────
-  app.get('/mailbox/messages', { preHandler: requireAuth }, async (req) => {
+  app.get('/mailbox/messages', {
+    preHandler: requireAuth,
+    schema: {
+      description: 'List messages in a folder',
+      tags: ['mailbox'],
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        properties: {
+          folder: { type: 'string', enum: ['inbox', 'sent', 'archive', 'spam', 'drafts'], default: 'inbox' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            messages: {
+              type: 'array',
+              items: { $ref: 'MailboxMessage' },
+            },
+            total: { type: 'number' },
+          },
+        },
+      },
+    },
+  }, async (req) => {
     const user = (req as any).user
     const userDir = getUserDir(user)
     const folder = ((req.query as any)?.folder as string) || 'inbox'
@@ -139,7 +164,25 @@ export default async function mailboxRoutes(app: FastifyInstance) {
   })
 
   // ── GET /mailbox/message?id=... (query param, not route param) ──
-  app.get('/mailbox/message', { preHandler: requireAuth }, async (req, reply) => {
+  app.get('/mailbox/message', {
+    preHandler: requireAuth,
+    schema: {
+      description: 'Get a specific message',
+      tags: ['mailbox'],
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+      querystring: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: 'Message filename' },
+        },
+      },
+      response: {
+        200: { $ref: 'MailboxMessageDetail' },
+        404: { $ref: 'Error' },
+      },
+    },
+  }, async (req, reply) => {
     const user = (req as any).user
     const userDir = getUserDir(user)
     const messageId = (req.query as any)?.id
@@ -194,7 +237,25 @@ export default async function mailboxRoutes(app: FastifyInstance) {
   // ── DELETE /mailbox/message — body: {id} ───────────────────────
   app.delete<{
     Body: { id: string }
-  }>('/mailbox/message', { preHandler: requireAuth }, async (req, reply) => {
+  }>('/mailbox/message', {
+    preHandler: requireAuth,
+    schema: {
+      description: 'Delete a message',
+      tags: ['mailbox'],
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string' },
+        },
+      },
+      response: {
+        200: { $ref: 'OkResponse' },
+        404: { $ref: 'Error' },
+      },
+    },
+  }, async (req, reply) => {
     const user = (req as any).user
     const userDir = getUserDir(user)
     const messageId = (req.body as any)?.id
@@ -212,7 +273,25 @@ export default async function mailboxRoutes(app: FastifyInstance) {
   })
 
   // ── GET /mailbox/stats ─────────────────────────────────────────
-  app.get('/mailbox/stats', { preHandler: requireAuth }, async (req) => {
+  app.get('/mailbox/stats', {
+    preHandler: requireAuth,
+    schema: {
+      description: 'Get mailbox statistics',
+      tags: ['mailbox'],
+      security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            unread: { type: 'number' },
+            total: { type: 'number' },
+            size_bytes: { type: 'number' },
+            quota_mb: { type: 'number' },
+          },
+        },
+      },
+    },
+  }, async (req) => {
     const user = (req as any).user
     const userDir = getUserDir(user)
 

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import * as db from '../db.js'
 import { hashToken } from '../auth.js'
 import { hash } from 'argon2'
+import { SignupSchema, LoginSchema, CreateTokenSchema } from '../schemas.js'
 
 const COOKIE_SECURE = process.env.COOKIE_SECURE !== 'false'
 const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE as any) || 'lax'
@@ -10,21 +11,43 @@ export default async function authRoutes(app: FastifyInstance) {
   // ── POST /auth/signup ──────────────────────────────────────────
   app.post<{
     Body: { email: string; password: string }
-  }>('/auth/signup', async (req, reply) => {
+  }>('/auth/signup', {
+    schema: {
+      description: 'Create a new user account',
+      tags: ['auth'],
+      body: {
+        type: 'object',
+        required: ['email', 'password'],
+        properties: {
+          email: { type: 'string', format: 'email' },
+          password: { type: 'string', minLength: 8 },
+        },
+      },
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            id: { type: 'number' },
+            email: { type: 'string' },
+            is_admin: { type: 'boolean' },
+          },
+        },
+        403: { $ref: 'Error' },
+        409: { $ref: 'Error' },
+      },
+    },
+  }, async (req, reply) => {
     const config = db.getServerConfig()
     if (!config.signup_enabled) {
       return reply.status(403).send({ error: 'Self-signup is disabled' })
     }
 
-    const { email, password } = req.body || {}
-    if (!email || !password) {
-      return reply.status(400).send({ error: 'Email and password required' })
+    const parsed = SignupSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message })
     }
 
-    // Basic email validation
-    if (!email.includes('@') || email.startsWith('@') || email.endsWith('@')) {
-      return reply.status(400).send({ error: 'Invalid email format' })
-    }
+    const { email, password } = parsed.data
 
     // Check if user already exists
     const existing = db.getUserByEmail(email)
@@ -70,11 +93,38 @@ export default async function authRoutes(app: FastifyInstance) {
   // ── POST /auth/login ──────────────────────────────────────────
   app.post<{
     Body: { email: string; password: string }
-  }>('/auth/login', async (req, reply) => {
-    const { email, password } = req.body || {}
-    if (!email || !password) {
-      return reply.status(400).send({ error: 'Email and password required' })
+  }>('/auth/login', {
+    schema: {
+      description: 'Authenticate with email and password',
+      tags: ['auth'],
+      body: {
+        type: 'object',
+        required: ['email', 'password'],
+        properties: {
+          email: { type: 'string', format: 'email' },
+          password: { type: 'string', minLength: 1 },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'number' },
+            email: { type: 'string' },
+            is_admin: { type: 'boolean' },
+          },
+        },
+        401: { $ref: 'Error' },
+        403: { $ref: 'Error' },
+      },
+    },
+  }, async (req, reply) => {
+    const parsed = LoginSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message })
     }
+
+    const { email, password } = parsed.data
 
     const user = db.getUserByEmail(email)
     if (!user) {
@@ -112,7 +162,18 @@ export default async function authRoutes(app: FastifyInstance) {
   })
 
   // ── POST /auth/logout ─────────────────────────────────────────
-  app.post('/auth/logout', async (req, reply) => {
+  app.post('/auth/logout', {
+    schema: {
+      description: 'End current session',
+      tags: ['auth'],
+      response: {
+        200: {
+          type: 'object',
+          properties: { ok: { type: 'boolean' } },
+        },
+      },
+    },
+  }, async (req, reply) => {
     const sessionId = req.cookies?.['stampd-session']
     if (sessionId) {
       db.deleteSession(sessionId)
@@ -124,12 +185,41 @@ export default async function authRoutes(app: FastifyInstance) {
   // ── POST /auth/tokens ─────────────────────────────────────────
   app.post<{
     Body: { label: string }
-  }>('/auth/tokens', { preHandler: requireAuthForTokens }, async (req, reply) => {
+  }>('/auth/tokens', {
+    preHandler: requireAuthForTokens,
+    schema: {
+      description: 'Create a new API token',
+      tags: ['auth'],
+      security: [{ cookieAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['label'],
+        properties: {
+          label: { type: 'string', minLength: 1 },
+        },
+      },
+      response: {
+        201: {
+          type: 'object',
+          properties: {
+            id: { type: 'number' },
+            label: { type: 'string' },
+            scope: { type: 'string' },
+            token: { type: 'string', description: 'Token value (shown only once)' },
+          },
+        },
+        401: { $ref: 'Error' },
+      },
+    },
+  }, async (req, reply) => {
     const user = (req as any).user
-    const { label } = req.body || {}
-    if (!label) {
-      return reply.status(400).send({ error: 'Token label required' })
+
+    const parsed = CreateTokenSchema.safeParse(req.body)
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message })
     }
+
+    const { label } = parsed.data
 
     // Generate random token
     const rawToken = crypto.randomUUID().replace(/-/g, '')
@@ -147,13 +237,58 @@ export default async function authRoutes(app: FastifyInstance) {
   })
 
   // ── GET /auth/tokens ──────────────────────────────────────────
-  app.get('/auth/tokens', { preHandler: requireAuthForTokens }, async (req) => {
+  app.get('/auth/tokens', {
+    preHandler: requireAuthForTokens,
+    schema: {
+      description: 'List all API tokens',
+      tags: ['auth'],
+      security: [{ cookieAuth: [] }],
+      response: {
+        200: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'number' },
+              label: { type: 'string' },
+              scope: { type: 'string' },
+              created_at: { type: 'string' },
+              last_used_at: { type: 'string', nullable: true },
+            },
+          },
+        },
+        401: { $ref: 'Error' },
+      },
+    },
+  }, async (req) => {
     const user = (req as any).user
     return db.listUserTokens(user.id)
   })
 
   // ── DELETE /auth/tokens/:id ────────────────────────────────────
-  app.delete<{ Params: { id: string } }>('/auth/tokens/:id', { preHandler: requireAuthForTokens }, async (req, reply) => {
+  app.delete<{ Params: { id: string } }>('/auth/tokens/:id', {
+    preHandler: requireAuthForTokens,
+    schema: {
+      description: 'Revoke an API token',
+      tags: ['auth'],
+      security: [{ cookieAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string' },
+        },
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: { ok: { type: 'boolean' } },
+        },
+        401: { $ref: 'Error' },
+        404: { $ref: 'Error' },
+      },
+    },
+  }, async (req, reply) => {
     const user = (req as any).user
     const tokenId = parseInt(req.params.id)
     if (isNaN(tokenId)) {
