@@ -1,13 +1,12 @@
-//! Filter hook system — spawns external scripts at SMTP stages.
+//! Filter hook system — delegates to Transit Python bridge via gateway.
 //!
-//! Filters are directories in `filters_dir` containing:
-//! - `config.toml`: name, hooks (mail_from/rcpt_to/data), enabled
-//! - Executable scripts named `mail_from.py`, `rcpt_to.py`, `data.py`
+//! When `gateway_url` is configured, filters are executed via the gateway's
+//! Transit Python bridge (resident process, fast). Otherwise, falls back to
+//! spawning scripts directly.
 //!
-//! Context passed via stdin as JSON, result read from stdout as JSON:
-//! {"action": "accept"|"reject", "reason": "..."}
-//!
-//! Timeout enforced per-filter via `filters.timeout_ms`.
+//! Gateway endpoint: POST /internal/filters/hook
+//! Body: { "hook": "mail_from"|"rcpt_to"|"data", "context": {...}, "filters": [...] }
+//! Response: { "ok": true } or { "ok": false, "reason": "..." }
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -18,7 +17,7 @@ use tracing::{info, warn, error};
 use serde::{Deserialize, Serialize};
 
 /// Which SMTP hook point a filter handles.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HookPoint {
     MailFrom,
@@ -68,8 +67,122 @@ pub struct Filter {
 
 /// Run all enabled filters for a given hook point.
 ///
+/// If `gateway_url` is set, delegates to the gateway's Transit Python bridge.
+/// Otherwise, falls back to spawning scripts directly.
+///
 /// Returns Ok(()) if all filters accept, or Err(reason) if any rejects.
 pub async fn run_filters(
+    filters_dir: &Path,
+    hook: HookPoint,
+    context: &FilterContext,
+    timeout_ms: u64,
+    gateway_url: Option<&str>,
+) -> Result<(), String> {
+    // Try Transit delegation first
+    if let Some(gw_url) = gateway_url {
+        match run_filters_via_transit(gw_url, hook, context, filters_dir).await {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                warn!(error = %e, "Transit filter delegation failed, falling back to script spawning");
+            }
+        }
+    }
+
+    // Fallback: script spawning
+    run_filters_via_scripts(filters_dir, hook, context, timeout_ms).await
+}
+
+/// Run filters via the gateway's Transit Python bridge.
+async fn run_filters_via_transit(
+    gateway_url: &str,
+    hook: HookPoint,
+    context: &FilterContext,
+    filters_dir: &Path,
+) -> Result<(), String> {
+    // Load filter configs to get enabled filter function names
+    let filters = load_filters(filters_dir)
+        .map_err(|e| format!("Failed to load filters: {}", e))?;
+
+    let hook_name = match hook {
+        HookPoint::MailFrom => "mail_from",
+        HookPoint::RcptTo => "rcpt_to",
+        HookPoint::Data => "data",
+    };
+
+    // Map filter names to Transit function names
+    let enabled_filters: Vec<String> = filters
+        .iter()
+        .filter(|f| f.enabled && f.hooks.contains(&hook))
+        .map(|f| {
+            // Convert filter name to camelCase function name
+            // e.g., "block-sender" -> "blockSender", "spam-keywords" -> "spamKeywords"
+            let name = f.name.replace('-', "_");
+            let parts: Vec<&str> = name.split('_').collect();
+            let mut result = String::new();
+            for (i, part) in parts.iter().enumerate() {
+                if i == 0 {
+                    result.push_str(part);
+                } else {
+                    let mut chars = part.chars();
+                    if let Some(first) = chars.next() {
+                        result.push(first.to_uppercase().next().unwrap_or(first));
+                        result.push_str(chars.as_str());
+                    }
+                }
+            }
+            result
+        })
+        .collect();
+
+    if enabled_filters.is_empty() {
+        return Ok(()); // No filters for this hook
+    }
+
+    let context_json = serde_json::to_value(context)
+        .map_err(|e| format!("Failed to serialize context: {}", e))?;
+
+    let request_body = serde_json::json!({
+        "hook": hook_name,
+        "context": context_json,
+        "filters": enabled_filters,
+    });
+
+    let url = format!("{}/internal/filters/hook", gateway_url);
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(5000))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .post(&url)
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to call gateway filter endpoint: {}", e))?;
+
+    let status = response.status();
+    let body: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse gateway response: {}", e))?;
+
+    if !status.is_success() {
+        return Err(format!("Gateway returned error status: {}", status));
+    }
+
+    if body.get("ok").and_then(|v| v.as_bool()) == Some(false) {
+        let reason = body.get("reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        return Err(reason.to_string());
+    }
+
+    Ok(())
+}
+
+/// Run filters by spawning scripts directly (legacy fallback).
+async fn run_filters_via_scripts(
     filters_dir: &Path,
     hook: HookPoint,
     context: &FilterContext,
@@ -99,7 +212,7 @@ pub async fn run_filters(
         // Look for script with common extensions
         let script_path = find_script(&filter.path, script_name);
         if let Some(script_path) = script_path {
-            info!(filter = %filter.name, hook = ?hook, script = %script_path.display(), "Running filter");
+            info!(filter = %filter.name, hook = ?hook, script = %script_path.display(), "Running filter via script");
 
             match run_filter_script(&script_path, context, timeout_ms).await {
                 Ok(result) => {

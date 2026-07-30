@@ -571,6 +571,129 @@ impl Database {
         let rows = conn.execute("DELETE FROM filters WHERE id = ?1", [id])?;
         Ok(rows > 0)
     }
+
+    // ── Custom Domains ───────────────────────────────────────────
+
+    /// Check if a domain is allowed (configured domain or a verified custom domain).
+    pub fn is_domain_allowed(&self, domain: &str) -> bool {
+        let conn = self.conn.lock().unwrap();
+        // Check configured domain
+        let configured: String = conn
+            .query_row(
+                "SELECT domain FROM server_config WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default();
+        if domain.eq_ignore_ascii_case(&configured) {
+            return true;
+        }
+        // Check custom domains
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM custom_domains WHERE domain = ?1 AND verified = 1",
+                [domain.to_lowercase()],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        count > 0
+    }
+
+    /// Get the user_id that owns a custom domain (for routing incoming mail).
+    pub fn get_domain_owner(&self, domain: &str) -> Option<i64> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT user_id FROM custom_domains WHERE domain = ?1 AND verified = 1",
+            [domain.to_lowercase()],
+            |row| row.get(0),
+        )
+        .ok()
+    }
+
+    /// Get the local part (username) for a domain+email combo.
+    /// For custom domains, the user's email local part is used.
+    pub fn get_mailbox_user_for_domain(&self, domain: &str, recipient_email: &str) -> Option<String> {
+        let local_part = recipient_email.split('@').next()?.to_string();
+        let config_domain: String = {
+            let conn = self.conn.lock().unwrap();
+            conn.query_row(
+                "SELECT domain FROM server_config WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default()
+        };
+        if domain.eq_ignore_ascii_case(&config_domain) {
+            return Some(local_part);
+        }
+        // For custom domains, find the user who owns this domain
+        let owner_id = self.get_domain_owner(domain)?;
+        let conn = self.conn.lock().unwrap();
+        let email: String = conn
+            .query_row(
+                "SELECT email FROM users WHERE id = ?1",
+                [owner_id],
+                |row| row.get(0),
+            )
+            .ok()?;
+        Some(email.split('@').next()?.to_string())
+    }
+
+    /// List all custom domains for a user.
+    pub fn list_custom_domains(&self, user_id: i64) -> SqlResult<Vec<(i64, String, bool, i64)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT id, domain, verified, created_at FROM custom_domains WHERE user_id = ?1 ORDER BY id"
+        )?;
+        let rows = stmt.query_map([user_id], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get::<_, i32>(2)? == 1,
+                row.get(3)?,
+            ))
+        })?;
+        rows.collect()
+    }
+
+    /// Add a custom domain for a user.
+    pub fn add_custom_domain(&self, user_id: i64, domain: &str) -> SqlResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        let result = conn.execute(
+            "INSERT INTO custom_domains (domain, user_id, verified, created_at) VALUES (?1, ?2, 0, ?3)",
+            rusqlite::params![domain.to_lowercase(), user_id, now()],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    /// Verify a custom domain (admin action or DNS check).
+    pub fn verify_custom_domain(&self, id: i64) -> SqlResult<bool> {
+        let conn = self.conn.lock().unwrap();
+        let rows = conn.execute(
+            "UPDATE custom_domains SET verified = 1 WHERE id = ?1",
+            [id],
+        )?;
+        Ok(rows > 0)
+    }
+
+    /// Delete a custom domain.
+    pub fn delete_custom_domain(&self, id: i64) -> SqlResult<bool> {
+        let conn = self.conn.lock().unwrap();
+        let rows = conn.execute("DELETE FROM custom_domains WHERE id = ?1", [id])?;
+        Ok(rows > 0)
+    }
+
+    /// List all verified custom domains (for the engine to accept mail for).
+    pub fn list_verified_domains(&self) -> Vec<String> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT domain FROM custom_domains WHERE verified = 1")
+            .unwrap();
+        let rows = stmt
+            .query_map([], |row| row.get(0))
+            .unwrap();
+        rows.filter_map(|r| r.ok()).collect()
+    }
 }
 
 // ── Schema SQL ───────────────────────────────────────────────────
@@ -649,6 +772,17 @@ CREATE TABLE IF NOT EXISTS filters (
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS custom_domains (
+    id INTEGER PRIMARY KEY,
+    domain TEXT NOT NULL UNIQUE,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    verified BOOLEAN NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_domains_domain ON custom_domains(domain);
+CREATE INDEX IF NOT EXISTS idx_custom_domains_user ON custom_domains(user_id);
 "#;
 
 // ── Helpers ──────────────────────────────────────────────────────

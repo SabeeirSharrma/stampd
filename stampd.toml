@@ -17,6 +17,11 @@ dkim_key_dir = "/var/lib/stampd/dkim"
 filters_dir = "/var/lib/stampd/filters"
 filters_timeout_ms = 500
 
+# Gateway URL for Transit filter delegation (optional)
+# When set, the engine delegates filter execution to the gateway's
+# Transit Python bridge instead of spawning scripts directly.
+gateway_url = "http://127.0.0.1:8080"
+
 [gateway]
 enabled = true
 port = 8080

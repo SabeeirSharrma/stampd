@@ -33,6 +33,11 @@ pub struct EngineConfig {
     /// Timeout for filter execution in milliseconds.
     #[serde(default = "default_filters_timeout_ms")]
     pub filters_timeout_ms: u64,
+    /// Gateway URL for filter delegation via Transit (optional).
+    /// When set, filters are executed via the gateway's Transit Python bridge
+    /// instead of spawning scripts directly.
+    #[serde(default)]
+    pub gateway_url: Option<String>,
 }
 
 fn default_domain() -> String {

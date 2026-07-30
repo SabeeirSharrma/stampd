@@ -1,6 +1,6 @@
 {
   "name": "stampd",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "workspaces": [
     "stampd-gateway",
@@ -17,7 +17,7 @@
     "lint": "cargo clippy --all-targets --all-features"
   },
   "dependencies": {
-    "transit": "^1.0.3",
-    "transit-cli": "^1.0.2"
+    "@sabeeirsharrma/transit": "^2.4.0",
+    "transit-cli": "^2.4.0"
   }
 }

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import * as db from '../db.js'
+import { getDb } from '../db.js'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -42,6 +43,14 @@ async function hashTokenSimple(token: string): Promise<string> {
   return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
+function generateFilename(): string {
+  const ts = Date.now()
+  const seq = Math.floor(Math.random() * 100000)
+  const pid = process.pid
+  const hostname = require('os').hostname()
+  return `${ts}.${seq}.${pid}.${hostname}:2,`
+}
+
 export default async function sendRoutes(app: FastifyInstance) {
   // ── POST /messages/send ────────────────────────────────────────
   app.post<{
@@ -59,14 +68,13 @@ export default async function sendRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Recipient and body are required' })
     }
 
-    // Validate recipient is external (not our domain)
-    const config = db.getServerConfig()
-    const recipientDomain = to.split('@')[1]
-    if (recipientDomain === config.domain) {
-      return reply.status(400).send({ error: 'Cannot send to local users via API — use the mailbox' })
+    // Validate recipient has @
+    if (!to.includes('@')) {
+      return reply.status(400).send({ error: 'Invalid recipient format' })
     }
 
     // Build the .eml message
+    const config = db.getServerConfig()
     const sender = from || user.email
     const messageId = `<${crypto.randomUUID()}@${config.domain}>`
     const now = new Date().toUTCString()
@@ -83,16 +91,50 @@ export default async function sendRoutes(app: FastifyInstance) {
       body,
     ].join('\r\n')
 
-    // Save to outbox
-    const outboxDir = process.env.STAMPD_OUTBOX || '/var/lib/stampd/outbox'
-    await mkdir(outboxDir, { recursive: true })
+    // Save to sent/ folder
+    const maildir = process.env.STAMPD_MAILDIR || '/var/lib/stampd/mail'
+    const localPart = user.email.split('@')[0]
+    const domain = user.email.split('@')[1] || config.domain
+    const sentDir = join(maildir, domain, localPart, 'sent')
+    await mkdir(sentDir, { recursive: true })
+    const sentFilename = generateFilename()
+    await writeFile(join(sentDir, sentFilename), eml)
 
-    const timestamp = Math.floor(Date.now() / 1000)
-    const msgFilename = `out-${timestamp}-${crypto.randomUUID().slice(0, 8)}.eml`
+    // Enqueue for delivery
+    const recipientDomain = to.split('@')[1]!
+    if (db.isDomainAllowed(recipientDomain)) {
+      // Local delivery — save directly to recipient's inbox
+      const rcptLocal = to.split('@')[0]!
+      // For custom domains, find the domain owner's mailbox
+      const config2 = db.getServerConfig()
+      let rcptMailbox = rcptLocal
+      if (recipientDomain !== config2.domain) {
+        // Custom domain — route to owner's mailbox
+        const ownerEmail = getDb().query(
+          'SELECT u.email FROM users u JOIN custom_domains cd ON cd.user_id = u.id WHERE cd.domain = ? AND cd.verified = 1'
+        ).get(recipientDomain) as { email: string } | undefined
+        if (ownerEmail) {
+          rcptMailbox = ownerEmail.email.split('@')[0]!
+        }
+      }
+      const rcptDir = join(maildir, config2.domain, rcptMailbox, 'new')
+      await mkdir(rcptDir, { recursive: true })
+      await writeFile(join(rcptDir, sentFilename), eml)
+
+      return reply.status(200).send({
+        id: 0,
+        status: 'delivered',
+        recipient: to,
+      })
+    }
+
+    // External delivery — enqueue
+    const outboxDir = join(maildir, domain, localPart, 'outbox')
+    await mkdir(outboxDir, { recursive: true })
+    const msgFilename = `out-${Date.now()}-${crypto.randomUUID().slice(0, 8)}.eml`
     const msgPath = join(outboxDir, msgFilename)
     await writeFile(msgPath, eml)
 
-    // Enqueue for delivery
     const queueId = db.enqueueMessage(user.id, to, msgPath)
 
     return reply.status(202).send({

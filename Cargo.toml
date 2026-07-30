@@ -3,10 +3,14 @@ resolver = "2"
 members = [
     "stampd-engine",
     "stampd-cli",
+    "stampd-engine-bridge",
+]
+exclude = [
+    "test-transit/rust",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/sabeeir/stampd"
@@ -28,3 +32,4 @@ rustls-pemfile = "2"
 trust-dns-resolver = "0.23"
 ring = "0.17"
 base64 = "0.22"
+reqwest = { version = "0.12", features = ["json"] }

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import * as db from '../db.js'
+import { verifyDns, getDnsInstructions } from '../dns-verify.js'
 
 async function requireAdmin(req: FastifyRequest, reply: FastifyReply) {
   const sessionId = req.cookies?.['stampd-session']
@@ -267,6 +268,92 @@ export default async function adminRoutes(app: FastifyInstance) {
     const deleted = db.deleteFilter(filterId)
     if (!deleted) {
       return reply.status(404).send({ error: 'Filter not found' })
+    }
+    return { ok: true }
+  })
+
+  // ── Custom Domains ───────────────────────────────────────────
+
+  // GET /admin/domains — list user's custom domains
+  app.get('/admin/domains', { preHandler: requireAdmin }, async (req) => {
+    const user = (req as any).user
+    return db.listCustomDomains(user.id)
+  })
+
+  // POST /admin/domains — add custom domain
+  app.post<{
+    Body: { domain: string }
+  }>('/admin/domains', { preHandler: requireAdmin }, async (req, reply) => {
+    const user = (req as any).user
+    const { domain } = (req.body as any) || {}
+    if (!domain || !domain.includes('.')) {
+      return reply.status(400).send({ error: 'Valid domain required (e.g. mail.example.com)' })
+    }
+
+    // Check if domain already taken
+    if (db.isDomainAllowed(domain)) {
+      return reply.status(409).send({ error: 'Domain already configured' })
+    }
+
+    const id = db.addCustomDomain(user.id, domain)
+    return reply.status(201).send({
+      ok: true,
+      domain: { id, domain: domain.toLowerCase(), verified: false },
+      dns: {
+        mx: `MX record: ${domain.toLowerCase()} → your Stampd server IP`,
+        spf: `TXT record for ${domain.toLowerCase()}: "v=spf1 ip4:YOUR_SERVER_IP ~all"`,
+        dkim: `TXT record for default._domainkey.${domain.toLowerCase()}: your DKIM public key`,
+        note: 'Configure these DNS records, then verify the domain.',
+      },
+    })
+  })
+
+  // POST /admin/domains/verify — verify DNS records are set
+  app.post<{
+    Body: { id: number }
+  }>('/admin/domains/verify', { preHandler: requireAdmin }, async (req, reply) => {
+    const { id } = (req.body as any) || {}
+    if (!id) return reply.status(400).send({ error: 'Missing domain id' })
+
+    const domains = db.listCustomDomains((req as any).user.id)
+    const domain = domains.find((d: any) => d.id === id)
+    if (!domain) return reply.status(404).send({ error: 'Domain not found' })
+
+    // Get server IP from config
+    const config = db.getServerConfig()
+    const serverIp = process.env.SERVER_IP || '127.0.0.1'
+
+    // Verify DNS records
+    const verification = await verifyDns(domain.domain, serverIp)
+
+    if (verification.ready) {
+      db.verifyCustomDomain(id)
+      return {
+        ok: true,
+        verified: true,
+        domain: domain.domain,
+        dns: verification,
+      }
+    }
+
+    return {
+      ok: false,
+      verified: false,
+      domain: domain.domain,
+      dns: verification,
+      instructions: getDnsInstructions(domain.domain, serverIp),
+    }
+  })
+
+  // DELETE /admin/domains/:id — remove custom domain
+  app.delete<{ Params: { id: string } }>('/admin/domains/:id', { preHandler: requireAdmin }, async (req, reply) => {
+    const domainId = parseInt(req.params.id)
+    if (isNaN(domainId)) {
+      return reply.status(400).send({ error: 'Invalid domain id' })
+    }
+    const deleted = db.deleteCustomDomain(domainId)
+    if (!deleted) {
+      return reply.status(404).send({ error: 'Domain not found' })
     }
     return { ok: true }
   })

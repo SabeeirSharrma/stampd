@@ -1,0 +1,41 @@
+[Unit]
+Description=Stampd Mail Server
+Documentation=https://sabeeir.qd.je/stampd
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stampd
+Group=stampd
+WorkingDirectory=/opt/stampd
+ExecStart=/opt/stampd/bin/stampd up
+ExecStop=/opt/stampd/bin/stampd down
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Environment
+Environment=RUST_LOG=info
+Environment=NODE_ENV=production
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/stampd /var/run/stampd /var/log/stampd
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Network
+ProtectSystem=false
+PrivateNetwork=false
+
+[Install]
+WantedBy=multi-user.target

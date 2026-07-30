@@ -3,6 +3,9 @@ import * as db from '../db.js'
 import { hashToken } from '../auth.js'
 import { hash } from 'argon2'
 
+const COOKIE_SECURE = process.env.COOKIE_SECURE !== 'false'
+const COOKIE_SAMESITE = (process.env.COOKIE_SAMESITE as any) || 'lax'
+
 export default async function authRoutes(app: FastifyInstance) {
   // ── POST /auth/signup ──────────────────────────────────────────
   app.post<{
@@ -52,8 +55,8 @@ export default async function authRoutes(app: FastifyInstance) {
     reply.setCookie('stampd-session', sessionId, {
       path: '/',
       httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
+      secure: COOKIE_SECURE,
+      sameSite: COOKIE_SAMESITE,
       maxAge: 30 * 24 * 60 * 60, // 30 days
     })
 
@@ -96,8 +99,8 @@ export default async function authRoutes(app: FastifyInstance) {
     reply.setCookie('stampd-session', sessionId, {
       path: '/',
       httpOnly: true,
-      secure: true,
-      sameSite: 'lax',
+      secure: COOKIE_SECURE,
+      sameSite: COOKIE_SAMESITE,
       maxAge: 30 * 24 * 60 * 60,
     })
 

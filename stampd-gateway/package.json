@@ -1,6 +1,6 @@
 {
   "name": "stampd-gateway",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "type": "module",
   "private": true,
   "scripts": {
@@ -11,6 +11,7 @@
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^10.0.0",
     "@fastify/rate-limit": "^10.0.0",
+    "@sabeeirsharrma/transit": "^2.4.0",
     "argon2": "^0.45.0",
     "fastify": "^5.0.0",
     "zod": "^3.23.0"

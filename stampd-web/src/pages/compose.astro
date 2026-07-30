@@ -11,11 +11,14 @@ import "../styles/global.css";
         <a href="/" class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
         </a>
-        <h1 class="text-headline-sm font-semibold text-on-surface">New Message</h1>
+        <h1 id="page-title" class="text-headline-sm font-semibold text-on-surface">New Message</h1>
       </div>
-      <button id="logout-btn" class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
-      </button>
+      <div class="flex items-center gap-2">
+        <span id="draft-indicator" class="hidden text-body-xs text-on-surface-variant">Draft saved</span>
+        <button id="logout-btn" class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></svg>
+        </button>
+      </div>
     </header>
 
     <!-- Compose form -->
@@ -65,64 +68,181 @@ import "../styles/global.css";
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
             Send
           </button>
-          <a
-            href="/"
+          <button
+            type="button"
+            id="save-draft-btn"
+            class="flex-1 flex items-center justify-center gap-2 border border-outline-variant rounded-lg font-bold text-label-md text-on-surface-variant hover:bg-surface-container transition-colors py-3"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>
+            Save Draft
+          </button>
+          <button
+            type="button"
+            id="discard-btn"
             class="px-6 py-3 border border-outline-variant rounded-lg font-bold text-label-md text-on-surface-variant hover:bg-surface-container transition-colors"
           >
             Discard
-          </a>
+          </button>
         </div>
       </form>
     </div>
   </div>
 
   <script>
-    import { sendMessage, logout as apiLogout } from "../lib/api";
+    import {
+      sendMessage,
+      saveDraft,
+      updateDraft,
+      deleteDraft,
+      getMessage,
+      logout as apiLogout,
+    } from "../lib/api";
     import { requireAuth, setUser } from "../lib/auth";
 
     const user = requireAuth();
 
-    // Pre-fill from URL params (reply/forward)
     const params = new URLSearchParams(window.location.search);
-    if (params.get("to")) (document.getElementById("to") as HTMLInputElement).value = params.get("to")!;
-    if (params.get("subject")) (document.getElementById("subject") as HTMLInputElement).value = params.get("subject")!;
-    if (params.get("body")) (document.getElementById("body") as HTMLTextAreaElement).value = params.get("body")!;
+    const draftId = params.get("draft");
 
+    const toInput = document.getElementById("to") as HTMLInputElement;
+    const subjectInput = document.getElementById("subject") as HTMLInputElement;
+    const bodyInput = document.getElementById("body") as HTMLTextAreaElement;
     const form = document.getElementById("compose-form") as HTMLFormElement;
     const errorEl = document.getElementById("error-msg")!;
     const successEl = document.getElementById("success-msg")!;
     const sendBtn = document.getElementById("send-btn") as HTMLButtonElement;
+    const saveDraftBtn = document.getElementById("save-draft-btn") as HTMLButtonElement;
+    const discardBtn = document.getElementById("discard-btn") as HTMLButtonElement;
+    const draftIndicator = document.getElementById("draft-indicator")!;
+    const pageTitle = document.getElementById("page-title")!;
 
-    form.addEventListener("submit", async (e) => {
+    let currentDraftId: string | null = draftId;
+    let autoSaveTimer: ReturnType<typeof setInterval> | null = null;
+
+    async function loadDraft(id: string) {
+      try {
+        const draft = await getMessage(id);
+        if (draft.to) toInput.value = draft.to;
+        if (draft.subject) subjectInput.value = draft.subject;
+        if (draft.body) bodyInput.value = draft.body;
+        pageTitle.textContent = "Edit Draft";
+      } catch {
+        // Draft may have been deleted; start fresh
+        currentDraftId = null;
+      }
+    }
+
+    function prefillFromParams() {
+      const toParam = params.get("to");
+      const subjectParam = params.get("subject");
+      const bodyParam = params.get("body");
+      if (toParam && !toInput.value) toInput.value = toParam;
+      if (subjectParam && !subjectInput.value) subjectInput.value = subjectParam;
+      if (bodyParam && !bodyInput.value) bodyInput.value = bodyParam;
+    }
+
+    function hasContent(): boolean {
+      return (
+        toInput.value.trim().length > 0 ||
+        subjectInput.value.trim().length > 0 ||
+        bodyInput.value.trim().length > 0
+      );
+    }
+
+    function showDraftSaved() {
+      draftIndicator.classList.remove("hidden");
+      setTimeout(() => draftIndicator.classList.add("hidden"), 3000);
+    }
+
+    async function autoSaveDraft() {
+      if (!hasContent()) return;
+      try {
+        const draftData = {
+          to: toInput.value,
+          subject: subjectInput.value,
+          body: bodyInput.value,
+        };
+        if (currentDraftId) {
+          await updateDraft(currentDraftId, draftData);
+        } else {
+          const saved = await saveDraft(draftData);
+          currentDraftId = saved.id;
+        }
+        showDraftSaved();
+      } catch {
+        // Silent fail for auto-save
+      }
+    }
+
+    async function handleSend(e: Event) {
       e.preventDefault();
       errorEl.classList.add("hidden");
       successEl.classList.add("hidden");
       sendBtn.disabled = true;
-      sendBtn.textContent = "Sending...";
-
-      const to = (document.getElementById("to") as HTMLInputElement).value;
-      const subject = (document.getElementById("subject") as HTMLInputElement).value;
-      const body = (document.getElementById("body") as HTMLTextAreaElement).value;
+      sendBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg> Sending...`;
 
       try {
-        await sendMessage(to, subject, body);
-        successEl.textContent = "Message queued for delivery";
-        successEl.classList.remove("hidden");
-        form.reset();
-        sendBtn.disabled = false;
-        sendBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg> Send`;
+        await sendMessage(toInput.value, subjectInput.value, bodyInput.value);
+        if (currentDraftId) {
+          try { await deleteDraft(currentDraftId); } catch {}
+        }
+        window.location.href = "/?sent=1";
       } catch (err: any) {
         errorEl.textContent = err.message || "Failed to send";
         errorEl.classList.remove("hidden");
         sendBtn.disabled = false;
         sendBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg> Send`;
       }
-    });
+    }
+
+    async function handleSaveDraft() {
+      saveDraftBtn.disabled = true;
+      try {
+        const draftData = {
+          to: toInput.value,
+          subject: subjectInput.value,
+          body: bodyInput.value,
+        };
+        if (currentDraftId) {
+          await updateDraft(currentDraftId, draftData);
+        } else {
+          const saved = await saveDraft(draftData);
+          currentDraftId = saved.id;
+        }
+        window.location.href = "/";
+      } catch (err: any) {
+        errorEl.textContent = err.message || "Failed to save draft";
+        errorEl.classList.remove("hidden");
+        saveDraftBtn.disabled = false;
+      }
+    }
+
+    async function handleDiscard() {
+      if (currentDraftId) {
+        try { await deleteDraft(currentDraftId); } catch {}
+      }
+      window.location.href = "/";
+    }
+
+    form.addEventListener("submit", handleSend);
+    saveDraftBtn.addEventListener("click", handleSaveDraft);
+    discardBtn.addEventListener("click", handleDiscard);
 
     document.getElementById("logout-btn")?.addEventListener("click", async () => {
+      if (autoSaveTimer) clearInterval(autoSaveTimer);
       try { await apiLogout(); } catch {}
       setUser(null);
       window.location.href = "/login";
     });
+
+    // Initialize
+    (async () => {
+      if (draftId) {
+        await loadDraft(draftId);
+      } else {
+        prefillFromParams();
+      }
+      autoSaveTimer = setInterval(autoSaveDraft, 30000);
+    })();
   </script>
 </Base>

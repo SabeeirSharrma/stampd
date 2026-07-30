@@ -3,6 +3,8 @@ import authRoutes from './routes/auth.js'
 import mailboxRoutes from './routes/mailbox.js'
 import sendRoutes from './routes/send.js'
 import adminRoutes from './routes/admin.js'
+import filterRoutes from './routes/filters.js'
+import { stopFilters } from './filters.js'
 
 async function createApp(): Promise<FastifyInstance> {
   const app = (await import('fastify')).default({
@@ -10,8 +12,12 @@ async function createApp(): Promise<FastifyInstance> {
   })
 
   // ── Plugins ────────────────────────────────────────────────────
+  // Allow all origins in dev; lock down in production
+  // origin: true reflects the request origin — works with credentials
+  const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || ['*']
+
   await app.register((await import('@fastify/cors')).default, {
-    origin: process.env.CORS_ORIGINS?.split(',') || ['*'],
+    origin: allowedOrigins.includes('*') ? true : allowedOrigins,
     credentials: true,
   })
 
@@ -32,6 +38,12 @@ async function createApp(): Promise<FastifyInstance> {
   await app.register(mailboxRoutes)
   await app.register(sendRoutes)
   await app.register(adminRoutes)
+  await app.register(filterRoutes)
+
+  // ── Graceful Shutdown ──────────────────────────────────────────
+  app.addHook('onClose', async () => {
+    await stopFilters()
+  })
 
   return app
 }

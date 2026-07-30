@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  stampd:
+    build: .
+    container_name: stampd
+    restart: unless-stopped
+    ports:
+      - "25:25"        # SMTP (inbound)
+      - "587:587"      # Submission (outbound)
+      - "8080:8080"    # Gateway API
+      - "3000:3000"    # Web UI (optional)
+    volumes:
+      - stampd-mail:/var/lib/stampd/mail
+      - stampd-dkim:/var/lib/stampd/dkim
+      - stampd-db:/var/lib/stampd
+      - ./stampd.toml:/etc/stampd/stampd.toml:ro
+      - ./logs:/var/log/stampd
+    environment:
+      - RUST_LOG=info
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Optional: Caddy reverse proxy for HTTPS
+  caddy:
+    image: caddy:2-alpine
+    container_name: stampd-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - stampd
+
+volumes:
+  stampd-mail:
+    driver: local
+  stampd-dkim:
+    driver: local
+  stampd-db:
+    driver: local
+  caddy-data:
+    driver: local
+  caddy-config:
+    driver: local

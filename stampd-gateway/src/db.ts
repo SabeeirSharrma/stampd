@@ -368,3 +368,52 @@ export function deleteFilter(id: number): boolean {
   const result = getDb().run('DELETE FROM filters WHERE id = ?', [id])
   return result.changes > 0
 }
+
+// ── Custom Domains ────────────────────────────────────────────
+
+export interface CustomDomain {
+  id: number
+  domain: string
+  user_id: number
+  verified: boolean
+  created_at: number
+}
+
+export function listCustomDomains(userId: number): CustomDomain[] {
+  return getDb().query(
+    'SELECT id, domain, user_id, verified, created_at FROM custom_domains WHERE user_id = ? ORDER BY id'
+  ).all(userId) as CustomDomain[]
+}
+
+export function addCustomDomain(userId: number, domain: string): number {
+  const now = Math.floor(Date.now() / 1000)
+  const result = getDb().run(
+    'INSERT INTO custom_domains (domain, user_id, verified, created_at) VALUES (?, ?, 0, ?)',
+    [domain.toLowerCase(), userId, now]
+  )
+  return Number(result.lastInsertRowid)
+}
+
+export function verifyCustomDomain(id: number): boolean {
+  const result = getDb().run(
+    'UPDATE custom_domains SET verified = 1 WHERE id = ?',
+    [id]
+  )
+  return result.changes > 0
+}
+
+export function deleteCustomDomain(id: number): boolean {
+  const result = getDb().run('DELETE FROM custom_domains WHERE id = ?', [id])
+  return result.changes > 0
+}
+
+export function isDomainAllowed(domain: string): boolean {
+  // Check configured domain
+  const config = getServerConfig()
+  if (domain.toLowerCase() === config.domain.toLowerCase()) return true
+  // Check custom domains
+  const count = getDb().query(
+    'SELECT COUNT(*) as c FROM custom_domains WHERE domain = ? AND verified = 1'
+  ).get(domain.toLowerCase()) as { c: number }
+  return count.c > 0
+}

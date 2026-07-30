@@ -1,0 +1,20 @@
+[package]
+name = "stampd-engine-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Transit napi bridge for Stampd engine — exposes core functions to Node.js"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", features = ["async", "serde-json"] }
+napi-derive = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+tokio = { version = "1", features = ["full"] }
+
+[build-dependencies]
+napi-build = "2"

@@ -1,0 +1,6 @@
+{
+  "blocked": [
+    "spam@example.com",
+    "test-block@domain.com"
+  ]
+}

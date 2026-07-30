@@ -63,12 +63,46 @@ import "../styles/global.css";
         </div>
       </section>
 
+      <!-- Custom Domains -->
+      <section>
+        <h2 class="text-headline-sm font-semibold text-on-surface mb-4">Custom Domains</h2>
+        <div class="bg-surface-container-low border border-outline-variant rounded-xl p-6">
+          <p class="text-body-sm text-on-secondary-container mb-4">
+            Add custom domains to receive mail from external senders on your own domain.
+            After adding a domain, configure MX, SPF, and DKIM DNS records, then verify.
+          </p>
+          <div id="domains-list" class="space-y-3 mb-4">
+            <p class="text-body-sm text-on-secondary-container">Loading domains...</p>
+          </div>
+
+          <div class="flex gap-3">
+            <input
+              id="domain-input"
+              type="text"
+              placeholder="mail.example.com"
+              class="flex-1 bg-surface-container border border-outline-variant rounded-lg px-4 py-2.5 text-body-md text-on-surface placeholder:text-on-secondary-container/50 focus:border-primary focus:ring-2 focus:ring-primary/20 outline-none transition-colors"
+            />
+            <button
+              id="add-domain-btn"
+              class="px-4 py-2.5 bg-primary-container text-on-primary-container rounded-lg font-bold text-label-md hover:opacity-90 transition-opacity"
+            >
+              Add Domain
+            </button>
+          </div>
+
+          <div id="dns-instructions" class="hidden mt-4 p-4 bg-surface-container rounded-lg border border-outline-variant space-y-2">
+            <p class="text-label-md text-on-secondary-container">DNS Configuration Required</p>
+            <pre class="text-body-sm text-on-surface font-mono whitespace-pre-wrap break-all" id="dns-records"></pre>
+          </div>
+        </div>
+      </section>
+
       <div id="error-msg" class="hidden text-body-sm text-error"></div>
     </div>
   </div>
 
   <script>
-    import { listTokens, createToken, revokeToken, logout as apiLogout } from "../lib/api";
+    import { listTokens, createToken, revokeToken, logout as apiLogout, listDomains, addDomain, verifyDomain, deleteDomain } from "../lib/api";
     import { requireAuth, setUser } from "../lib/auth";
 
     const user = requireAuth();
@@ -123,6 +157,74 @@ import "../styles/global.css";
       } catch {}
     });
 
+    // ── Custom Domains ──────────────────────────────────────────
+    async function loadDomains() {
+      const listEl = document.getElementById("domains-list")!;
+      try {
+        const domains = await listDomains();
+        if (domains.length === 0) {
+          listEl.innerHTML = `<p class="text-body-sm text-on-secondary-container">No custom domains yet</p>`;
+          return;
+        }
+        listEl.innerHTML = domains.map((d) => `
+          <div class="flex items-center justify-between p-3 bg-surface-container rounded-lg border border-outline-variant">
+            <div class="flex items-center gap-3">
+              <span class="w-2 h-2 rounded-full ${d.verified ? "bg-green-400" : "bg-yellow-400"}"></span>
+              <div>
+                <p class="text-body-md text-on-surface font-medium">${d.domain}</p>
+                <p class="text-body-sm text-on-secondary-container">${d.verified ? "Verified" : "Pending verification"}</p>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              ${!d.verified ? `<button class="text-primary text-body-sm hover:underline verify-btn" data-id="${d.id}">Verify</button>` : ""}
+              <button class="text-error text-body-sm hover:underline delete-domain-btn" data-id="${d.id}">Remove</button>
+            </div>
+          </div>
+        `).join("");
+
+        listEl.querySelectorAll(".verify-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const id = Number((btn as HTMLElement).dataset.id);
+            try {
+              await verifyDomain(id);
+              loadDomains();
+            } catch {}
+          });
+        });
+
+        listEl.querySelectorAll(".delete-domain-btn").forEach((btn) => {
+          btn.addEventListener("click", async () => {
+            const id = Number((btn as HTMLElement).dataset.id);
+            if (!confirm("Remove this domain?")) return;
+            try {
+              await deleteDomain(id);
+              loadDomains();
+            } catch {}
+          });
+        });
+      } catch {
+        listEl.innerHTML = `<p class="text-body-sm text-error">Failed to load domains</p>`;
+      }
+    }
+
+    // Add domain
+    document.getElementById("add-domain-btn")?.addEventListener("click", async () => {
+      const input = document.getElementById("domain-input") as HTMLInputElement;
+      const domain = input.value.trim();
+      if (!domain) return;
+      try {
+        const result = await addDomain(domain);
+        const dnsEl = document.getElementById("dns-instructions")!;
+        const recordsEl = document.getElementById("dns-records")!;
+        recordsEl.textContent = Object.entries(result.dns)
+          .map(([k, v]) => `${k.toUpperCase()}: ${v}`)
+          .join("\n");
+        dnsEl.classList.remove("hidden");
+        input.value = "";
+        loadDomains();
+      } catch {}
+    });
+
     // Logout
     document.getElementById("logout-btn")?.addEventListener("click", async () => {
       try { await apiLogout(); } catch {}
@@ -131,5 +233,6 @@ import "../styles/global.css";
     });
 
     loadTokens();
+    loadDomains();
   </script>
 </Base>

@@ -67,6 +67,8 @@ export interface MailboxMessage {
   size: number;
   path: string;
   folder: "new" | "cur";
+  isDraft?: boolean;
+  body?: string;
 }
 
 export interface MessageDetail extends MailboxMessage {
@@ -81,23 +83,88 @@ export interface MailboxStats {
   quota_mb: number;
 }
 
-export async function listMessages(): Promise<{
+export async function listMessages(
+  folder?: "inbox" | "sent" | "archive" | "spam" | "drafts",
+): Promise<{
   messages: MailboxMessage[];
   total: number;
 }> {
-  return request("GET", "/mailbox/messages");
+  const qs = folder ? `?folder=${encodeURIComponent(folder)}` : "";
+  return request("GET", `/mailbox/messages${qs}`);
 }
 
 export async function getMessage(id: string): Promise<MessageDetail> {
-  return request("GET", `/mailbox/messages/${encodeURIComponent(id)}`);
+  return request("GET", `/mailbox/message?id=${encodeURIComponent(id)}`);
 }
 
 export async function deleteMessage(id: string): Promise<void> {
-  await request("DELETE", `/mailbox/messages/${encodeURIComponent(id)}`);
+  await request("DELETE", "/mailbox/message", { id });
 }
 
 export async function getMailboxStats(): Promise<MailboxStats> {
   return request("GET", "/mailbox/stats");
+}
+
+// ── Drafts ────────────────────────────────────────────────────
+
+export interface Draft {
+  id: string;
+  to?: string;
+  subject?: string;
+  body?: string;
+  draft_id?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listDrafts(): Promise<{ drafts: Draft[] }> {
+  return request("GET", "/mailbox/drafts");
+}
+
+export async function saveDraft(draft: {
+  to?: string;
+  subject?: string;
+  body?: string;
+  draft_id?: string;
+}): Promise<Draft> {
+  return request("POST", "/mailbox/drafts", draft);
+}
+
+export async function updateDraft(
+  id: string,
+  draft: { to?: string; subject?: string; body?: string },
+): Promise<Draft> {
+  return request("PUT", "/mailbox/draft", { id, ...draft });
+}
+
+export async function deleteDraft(id: string): Promise<void> {
+  await request("DELETE", "/mailbox/draft", { id });
+}
+
+export async function sendDraft(id: string): Promise<void> {
+  await request("POST", "/mailbox/send-draft", { id });
+}
+
+// ── Message Actions ───────────────────────────────────────────
+
+export async function archiveMessage(id: string): Promise<void> {
+  await request("POST", "/mailbox/action", { action: "archive", id });
+}
+
+export async function unarchiveMessage(id: string): Promise<void> {
+  await request("POST", "/mailbox/action", { action: "unarchive", id });
+}
+
+export async function reportSpam(id: string): Promise<void> {
+  await request("POST", "/mailbox/action", { action: "spam", id });
+}
+
+export async function notSpam(id: string): Promise<void> {
+  await request("POST", "/mailbox/action", { action: "not-spam", id });
+}
+
+export async function markRead(id: string): Promise<void> {
+  await request("POST", "/mailbox/action", { action: "mark-read", id });
 }
 
 // ── Send ──────────────────────────────────────────────────────
@@ -267,4 +334,34 @@ export async function adminDeleteFilter(id: number): Promise<void> {
 
 export async function adminGetQuota(): Promise<QuotaEntry[]> {
   return request("GET", "/admin/quota");
+}
+
+// ── Custom Domains ────────────────────────────────────────────
+
+export interface CustomDomain {
+  id: number;
+  domain: string;
+  user_id: number;
+  verified: boolean;
+  created_at: number;
+}
+
+export async function listDomains(): Promise<CustomDomain[]> {
+  return request("GET", "/admin/domains");
+}
+
+export async function addDomain(
+  domain: string,
+): Promise<{ ok: boolean; domain: CustomDomain; dns: Record<string, string> }> {
+  return request("POST", "/admin/domains", { domain });
+}
+
+export async function verifyDomain(
+  id: number,
+): Promise<{ ok: boolean; verified: boolean; domain: string }> {
+  return request("POST", "/admin/domains/verify", { id });
+}
+
+export async function deleteDomain(id: number): Promise<void> {
+  await request("DELETE", `/admin/domains/${id}`);
 }

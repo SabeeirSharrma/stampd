@@ -102,7 +102,19 @@ import "../styles/global.css";
   </div>
 
   <script>
-    import { listMessages, getMessage, deleteMessage, getMailboxStats, logout as apiLogout } from "../lib/api";
+    import {
+      listMessages,
+      getMessage,
+      deleteMessage,
+      getMailboxStats,
+      logout as apiLogout,
+      archiveMessage,
+      unarchiveMessage,
+      reportSpam,
+      notSpam,
+      markRead,
+      sendDraft,
+    } from "../lib/api";
     import { getUser, setUser, requireAuth } from "../lib/auth";
     import type { MailboxMessage, MessageDetail } from "../lib/api";
 
@@ -173,7 +185,6 @@ import "../styles/global.css";
 
     // ── Keyboard nav ──────────────────────────────────────
     document.addEventListener("keydown", (e) => {
-      // Don't capture when typing in inputs
       if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
 
       const filtered = getFilteredMessages();
@@ -199,26 +210,29 @@ import "../styles/global.css";
           renderMessageList();
         }
       } else if (e.key === "r") {
-        // Reply — navigate to compose with prefill
         if (selectedMsg) {
+          let replyTo: string;
+          if (currentFolder === "sent") {
+            replyTo = selectedMsg.to;
+          } else {
+            replyTo = selectedMsg.from;
+          }
           const params = new URLSearchParams({
-            to: selectedMsg.from,
+            to: replyTo,
             subject: `Re: ${selectedMsg.subject || ""}`,
           });
           window.location.href = `/compose?${params.toString()}`;
         }
       } else if (e.key === "f") {
-        // Forward
         if (selectedMsg) {
           const params = new URLSearchParams({
             subject: `Fwd: ${selectedMsg.subject || ""}`,
-            body: `\n\n---------- Forwarded message ----------\nFrom: ${selectedMsg.from}\nSubject: ${selectedMsg.subject}\n\n${selectedMsg.body || ""}`,
+            body: `\n\n---------- Forwarded message ----------\nFrom: ${selectedMsg.from}\nTo: ${selectedMsg.to}\nSubject: ${selectedMsg.subject}\n\n${selectedMsg.body || ""}`,
           });
           window.location.href = `/compose?${params.toString()}`;
         }
       } else if (e.key === "#") {
-        // Delete
-        if (selectedId) deleteSelected();
+        if (selectedId) deleteById(selectedId);
       }
     });
 
@@ -236,7 +250,7 @@ import "../styles/global.css";
     // ── Load messages ─────────────────────────────────────
     async function loadMessages() {
       try {
-        const { messages: msgs } = await listMessages();
+        const { messages: msgs } = await listMessages(currentFolder as any);
         messages = msgs;
         inboxCount.textContent = String(msgs.length);
         renderMessageList();
@@ -269,6 +283,44 @@ import "../styles/global.css";
         const date = new Date(msg.date);
         const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+        let nameDisplay: string;
+        if (currentFolder === "sent") {
+          nameDisplay = `To: ${msg.to.split("@")[0]}`;
+        } else if (currentFolder === "drafts") {
+          nameDisplay = `To: ${msg.to || "(no recipient)"}`;
+        } else {
+          nameDisplay = msg.from.split("@")[0];
+        }
+
+        let actionButtons = "";
+        if (currentFolder === "drafts") {
+          actionButtons = `
+            <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-primary edit-draft-btn" data-id="${msg.id}" title="Edit">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+            </button>
+            <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-primary send-draft-btn" data-id="${msg.id}" title="Send">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            </button>`;
+        } else if (currentFolder === "archive") {
+          actionButtons = `
+            <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-primary unarchive-btn" data-id="${msg.id}" title="Unarchive">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="m12 3 9 5H3z"/></svg>
+            </button>`;
+        } else if (currentFolder === "spam") {
+          actionButtons = `
+            <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-primary not-spam-btn" data-id="${msg.id}" title="Not Spam">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+            </button>`;
+        } else {
+          actionButtons = `
+            <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-primary archive-btn" data-id="${msg.id}" title="Archive">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+            </button>
+            <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-error delete-btn" data-id="${msg.id}" title="Delete">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            </button>`;
+        }
+
         return `
           <div class="msg-item relative group p-6 border-b border-outline-variant cursor-pointer transition-colors ${isSelected ? "bg-surface-container hover:bg-surface-container-high" : "hover:bg-surface-container"}" data-id="${msg.id}" data-key="${msg.id}">
             <div class="flex gap-4 mb-2">
@@ -277,26 +329,23 @@ import "../styles/global.css";
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex justify-between items-start">
-                  <p class="truncate ${isSelected ? "font-bold" : "font-semibold"} text-on-surface">${escapeHtml(msg.from.split("@")[0])}</p>
+                  <p class="truncate ${isSelected ? "font-bold" : "font-semibold"} text-on-surface">${escapeHtml(nameDisplay)}</p>
                   <span class="font-mono text-[10px] text-on-secondary-container shrink-0 ml-2">${timeStr}</span>
                 </div>
                 <p class="text-body-md truncate ${isSelected ? "text-primary font-medium" : "text-on-surface-variant"}">Subject: ${escapeHtml(subject)}</p>
               </div>
             </div>
             <div class="absolute right-4 top-1/2 -translate-y-1/2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-surface-container-highest p-1 rounded-lg">
-              <button class="p-1.5 hover:bg-surface-bright rounded transition-colors text-error delete-btn" data-id="${msg.id}" title="Delete">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-              </button>
+              ${actionButtons}
             </div>
           </div>`;
       }).join("");
 
       messageList.innerHTML = html;
 
-      // Bind click handlers
       messageList.querySelectorAll(".msg-item").forEach((el) => {
         el.addEventListener("click", (e) => {
-          if ((e.target as HTMLElement).closest(".delete-btn")) return;
+          if ((e.target as HTMLElement).closest(".delete-btn, .archive-btn, .unarchive-btn, .not-spam-btn, .edit-draft-btn, .send-draft-btn")) return;
           const id = (el as HTMLElement).dataset.id!;
           selectMessage(id);
         });
@@ -307,6 +356,49 @@ import "../styles/global.css";
           e.stopPropagation();
           const id = (btn as HTMLElement).dataset.id!;
           await deleteById(id);
+        });
+      });
+
+      messageList.querySelectorAll(".archive-btn").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const id = (btn as HTMLElement).dataset.id!;
+          await archiveById(id);
+        });
+      });
+
+      messageList.querySelectorAll(".unarchive-btn").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const id = (btn as HTMLElement).dataset.id!;
+          await unarchiveById(id);
+        });
+      });
+
+      messageList.querySelectorAll(".not-spam-btn").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const id = (btn as HTMLElement).dataset.id!;
+          await notSpamById(id);
+        });
+      });
+
+      messageList.querySelectorAll(".edit-draft-btn").forEach((btn) => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const id = (btn as HTMLElement).dataset.id!;
+          window.location.href = `/compose?draft=${id}`;
+        });
+      });
+
+      messageList.querySelectorAll(".send-draft-btn").forEach((btn) => {
+        btn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const id = (btn as HTMLElement).dataset.id!;
+          try {
+            await sendDraft(id);
+            await loadMessages();
+          } catch {}
         });
       });
     }
@@ -325,6 +417,9 @@ import "../styles/global.css";
       try {
         const msg = await getMessage(id);
         selectedMsg = msg;
+        if (currentFolder === "inbox" && msg.folder === "new") {
+          try { await markRead(id); } catch {}
+        }
         renderReadingPane(msg, false);
       } catch {
         readingPane.innerHTML = `
@@ -358,6 +453,44 @@ import "../styles/global.css";
       const subject = msg.subject || "(no subject)";
       const bodyHtml = (msg.body || "").replace(/\n/g, "<br>");
       const initials = msg.from.split("@")[0].slice(0, 2).toUpperCase();
+      const isDraft = currentFolder === "drafts";
+
+      let headerButtons = "";
+      if (!isDraft) {
+        headerButtons = `
+          <button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors" id="pane-archive" title="Archive">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
+          </button>
+          <button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors" id="pane-spam" title="Report Spam">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          </button>
+          <button class="p-2 hover:bg-surface-container rounded-full text-error transition-colors" id="pane-delete" title="Delete (#)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>`;
+      }
+
+      let actionButtons = "";
+      if (isDraft) {
+        actionButtons = `
+          <button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary" id="pane-edit-draft">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+            Edit
+          </button>
+          <button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary" id="pane-send-draft">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            Send
+          </button>`;
+      } else {
+        actionButtons = `
+          <button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary" id="pane-reply">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3"/><path d="m3 15 4 4 4-4"/><path d="M7 8v8l4-4-4-4z"/></svg>
+            Reply
+          </button>
+          <button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary" id="pane-forward">
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3"/><path d="m14 4 4 4-4 4"/><path d="M17 8V4l4 4-4 4"/></svg>
+            Forward
+          </button>`;
+      }
 
       readingPane.innerHTML = `
         <header class="h-16 flex items-center justify-between px-6 border-b border-outline-variant bg-surface-container-lowest shrink-0">
@@ -365,12 +498,7 @@ import "../styles/global.css";
             <button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors" id="pane-back" title="Back to list (Esc)">
               <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
             </button>
-            <button class="p-2 hover:bg-surface-container rounded-full text-on-surface-variant transition-colors" id="pane-archive" title="Archive">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8"/><path d="M1 3h22v5H1z"/><path d="M10 12h4"/></svg>
-            </button>
-            <button class="p-2 hover:bg-surface-container rounded-full text-error transition-colors" id="pane-delete" title="Delete (#)">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-            </button>
+            ${headerButtons}
           </div>
           <div class="flex items-center gap-4">
             <button class="p-0.5 rounded-full border-2 border-primary hover:opacity-80 transition-opacity" onclick="document.getElementById('account-drawer')?.classList.toggle('translate-x-full')">
@@ -390,10 +518,10 @@ import "../styles/global.css";
                 </div>
                 <div>
                   <p class="font-bold text-on-surface">
-                    ${escapeHtml(msg.from.split("@")[0])}
-                    <span class="font-normal text-on-secondary-container ml-2">&lt;${escapeHtml(msg.from)}&gt;</span>
+                    ${isDraft ? escapeHtml(msg.to || "(no recipient)") : escapeHtml(msg.from.split("@")[0])}
+                    <span class="font-normal text-on-secondary-container ml-2">&lt;${isDraft ? escapeHtml(msg.to || "") : escapeHtml(msg.from)}&gt;</span>
                   </p>
-                  <p class="text-body-sm text-on-secondary-container">to ${escapeHtml(msg.to)}</p>
+                  <p class="text-body-sm text-on-secondary-container">${isDraft ? "Draft" : `to ${escapeHtml(msg.to)}`}</p>
                 </div>
               </div>
               <div class="text-right">
@@ -405,18 +533,10 @@ import "../styles/global.css";
         </div>
         <footer class="p-6 border-t border-outline-variant bg-surface-container-lowest shrink-0">
           <div class="max-w-3xl mx-auto flex gap-4">
-            <button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary" id="pane-reply">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3"/><path d="m3 15 4 4 4-4"/><path d="M7 8v8l4-4-4-4z"/></svg>
-              Reply
-            </button>
-            <button class="flex-1 flex items-center justify-center gap-2 border border-outline-variant py-3 rounded-lg hover:bg-surface-container transition-colors font-bold text-primary" id="pane-forward">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3"/><path d="m14 4 4 4-4 4"/><path d="M17 8V4l4 4-4 4"/></svg>
-              Forward
-            </button>
+            ${actionButtons}
           </div>
         </footer>`;
 
-      // Bind reading pane buttons
       document.getElementById("pane-back")?.addEventListener("click", () => {
         selectedMsg = null;
         selectedId = null;
@@ -428,10 +548,24 @@ import "../styles/global.css";
         if (selectedId) deleteById(selectedId);
       });
 
+      document.getElementById("pane-archive")?.addEventListener("click", () => {
+        if (selectedId) archiveById(selectedId);
+      });
+
+      document.getElementById("pane-spam")?.addEventListener("click", () => {
+        if (selectedId) reportSpamById(selectedId);
+      });
+
       document.getElementById("pane-reply")?.addEventListener("click", () => {
         if (!msg) return;
+        let replyTo: string;
+        if (currentFolder === "sent") {
+          replyTo = msg.to;
+        } else {
+          replyTo = msg.from;
+        }
         const params = new URLSearchParams({
-          to: msg.from,
+          to: replyTo,
           subject: `Re: ${msg.subject || ""}`,
         });
         window.location.href = `/compose?${params.toString()}`;
@@ -441,9 +575,25 @@ import "../styles/global.css";
         if (!msg) return;
         const params = new URLSearchParams({
           subject: `Fwd: ${msg.subject || ""}`,
-          body: `\n\n---------- Forwarded message ----------\nFrom: ${msg.from}\nSubject: ${msg.subject}\n\n${msg.body || ""}`,
+          body: `\n\n---------- Forwarded message ----------\nFrom: ${msg.from}\nTo: ${msg.to}\nSubject: ${msg.subject}\n\n${msg.body || ""}`,
         });
         window.location.href = `/compose?${params.toString()}`;
+      });
+
+      document.getElementById("pane-edit-draft")?.addEventListener("click", () => {
+        if (!msg) return;
+        window.location.href = `/compose?draft=${msg.id}`;
+      });
+
+      document.getElementById("pane-send-draft")?.addEventListener("click", async () => {
+        if (!msg) return;
+        try {
+          await sendDraft(msg.id);
+          await loadMessages();
+          selectedId = null;
+          selectedMsg = null;
+          renderReadingPane();
+        } catch {}
       });
     }
 
@@ -463,10 +613,73 @@ import "../styles/global.css";
       } catch {}
     }
 
+    // ── Archive message ───────────────────────────────────
+    async function archiveById(id: string) {
+      try {
+        await archiveMessage(id);
+        messages = messages.filter((m) => m.id !== id);
+        inboxCount.textContent = String(messages.length);
+
+        if (selectedId === id) {
+          selectedId = null;
+          selectedMsg = null;
+          renderReadingPane();
+        }
+        renderMessageList();
+      } catch {}
+    }
+
+    // ── Unarchive message ─────────────────────────────────
+    async function unarchiveById(id: string) {
+      try {
+        await unarchiveMessage(id);
+        messages = messages.filter((m) => m.id !== id);
+        inboxCount.textContent = String(messages.length);
+
+        if (selectedId === id) {
+          selectedId = null;
+          selectedMsg = null;
+          renderReadingPane();
+        }
+        renderMessageList();
+      } catch {}
+    }
+
+    // ── Report spam ───────────────────────────────────────
+    async function reportSpamById(id: string) {
+      try {
+        await reportSpam(id);
+        messages = messages.filter((m) => m.id !== id);
+        inboxCount.textContent = String(messages.length);
+
+        if (selectedId === id) {
+          selectedId = null;
+          selectedMsg = null;
+          renderReadingPane();
+        }
+        renderMessageList();
+      } catch {}
+    }
+
+    // ── Not spam ──────────────────────────────────────────
+    async function notSpamById(id: string) {
+      try {
+        await notSpam(id);
+        messages = messages.filter((m) => m.id !== id);
+        inboxCount.textContent = String(messages.length);
+
+        if (selectedId === id) {
+          selectedId = null;
+          selectedMsg = null;
+          renderReadingPane();
+        }
+        renderMessageList();
+      } catch {}
+    }
+
     // ── Refresh ───────────────────────────────────────────
     refreshBtn.addEventListener("click", loadMessages);
 
-    // Auto-refresh when tab regains focus
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden) loadMessages();
     });

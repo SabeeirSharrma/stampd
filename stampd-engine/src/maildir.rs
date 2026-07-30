@@ -13,9 +13,9 @@ pub async fn init(maildir_path: &str) -> Result<()> {
 /// Create Maildir for a new user
 pub async fn create_user_mailbox(maildir_path: &str, domain: &str, user: &str) -> Result<PathBuf> {
     let user_dir = Path::new(maildir_path).join(domain).join(user);
-    tokio::fs::create_dir_all(user_dir.join("cur")).await?;
-    tokio::fs::create_dir_all(user_dir.join("new")).await?;
-    tokio::fs::create_dir_all(user_dir.join("tmp")).await?;
+    for subdir in &["cur", "new", "tmp", "sent", "drafts", "archive", "spam"] {
+        tokio::fs::create_dir_all(user_dir.join(subdir)).await?;
+    }
     info!(domain, user, "Created user mailbox");
     Ok(user_dir)
 }

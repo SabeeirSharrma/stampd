@@ -98,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
         smtp_tls,
         std::path::PathBuf::from(&config.engine.filters_dir),
         config.engine.filters_timeout_ms,
+        config.engine.gateway_url.clone(),
     ));
 
     // Start outbound submission server (with DKIM)

@@ -1,0 +1,87 @@
+{
+  "scanner_version": "0.1.0",
+  "files": {
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/transit_server.py": {
+      "mtime": 1785390224,
+      "entries": [
+        {
+          "language": "python",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/transit_server.py",
+          "function_name": "register_function",
+          "signature": "register_function",
+          "export_tier": 1
+        },
+        {
+          "language": "python",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/transit_server.py",
+          "function_name": "start_server",
+          "signature": "start_server",
+          "export_tier": 1
+        },
+        {
+          "language": "python",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/transit_server.py",
+          "function_name": "TransitServer.start",
+          "signature": "def start(self)",
+          "export_tier": 1
+        },
+        {
+          "language": "python",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/transit_server.py",
+          "function_name": "TransitServer.stop",
+          "signature": "def stop(self)",
+          "export_tier": 1
+        }
+      ]
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/block_sender.json": {
+      "mtime": 1785390242,
+      "entries": []
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/spam_keywords.json": {
+      "mtime": 1785390246,
+      "entries": []
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/.transit-cache.json": {
+      "mtime": 1785391617,
+      "entries": []
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/__pycache__/transit_server.cpython-314.pyc": {
+      "mtime": 1785390461,
+      "entries": []
+    },
+    "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/service.py": {
+      "mtime": 1785390238,
+      "entries": [
+        {
+          "language": "python",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/service.py",
+          "function_name": "block_sender",
+          "signature": "block_sender",
+          "export_tier": 1
+        },
+        {
+          "language": "python",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/service.py",
+          "function_name": "spam_keywords",
+          "signature": "spam_keywords",
+          "export_tier": 1
+        },
+        {
+          "language": "python",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/service.py",
+          "function_name": "rate_limit",
+          "signature": "rate_limit",
+          "export_tier": 1
+        },
+        {
+          "language": "python",
+          "source_file": "/run/media/sabeeir/Work/SabeeirSharrma/stampd/stampd-gateway/python/filters/service.py",
+          "function_name": "check_recipient",
+          "signature": "check_recipient",
+          "export_tier": 1
+        }
+      ]
+    }
+  }
+}

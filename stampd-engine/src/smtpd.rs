@@ -25,6 +25,7 @@ struct SmtpSession {
     tls_config: Option<Arc<rustls::ServerConfig>>,
     filters_dir: std::path::PathBuf,
     filters_timeout_ms: u64,
+    gateway_url: Option<String>,
     helo_domain: Option<String>,
     mail_from: Option<String>,
     rcpt_to: Vec<String>,
@@ -40,6 +41,7 @@ pub async fn run(
     tls_config: Option<TlsConfig>,
     filters_dir: std::path::PathBuf,
     filters_timeout_ms: u64,
+    gateway_url: Option<String>,
 ) -> anyhow::Result<()> {
     let listener = TcpListener::bind(format!("0.0.0.0:{}", port)).await?;
     info!(port, domain = %domain, tls = tls_config.is_some(), "Inbound SMTP server listening");
@@ -55,9 +57,10 @@ pub async fn run(
         let db = db.clone();
         let tls_config = tls_config.clone();
         let filters_dir = filters_dir.clone();
+        let gateway_url = gateway_url.clone();
 
         tokio::spawn(async move {
-            if let Err(e) = handle_connection(stream, addr, maildir_path, domain, db, tls_config, filters_dir, filters_timeout_ms).await {
+            if let Err(e) = handle_connection(stream, addr, maildir_path, domain, db, tls_config, filters_dir, filters_timeout_ms, gateway_url).await {
                 error!(addr = %addr, error = ?e, "Connection error");
             }
         });
@@ -73,6 +76,7 @@ async fn handle_connection(
     tls_config: Option<Arc<rustls::ServerConfig>>,
     filters_dir: std::path::PathBuf,
     filters_timeout_ms: u64,
+    gateway_url: Option<String>,
 ) -> anyhow::Result<()> {
     let sender_ip = stream.peer_addr()?.ip();
     let mut line = String::new();
@@ -84,6 +88,7 @@ async fn handle_connection(
         tls_config,
         filters_dir,
         filters_timeout_ms,
+        gateway_url,
         helo_domain: None,
         mail_from: None,
         rcpt_to: Vec::new(),
@@ -179,7 +184,7 @@ async fn handle_connection(
                             headers: None,
                             body: None,
                         };
-                        match filters::run_filters(&session.filters_dir, HookPoint::MailFrom, &ctx, session.filters_timeout_ms).await {
+                        match filters::run_filters(&session.filters_dir, HookPoint::MailFrom, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
                             Ok(()) => {
                                 session.mail_from = Some(sender.clone());
                                 session.rcpt_to.clear();
@@ -203,13 +208,13 @@ async fn handle_connection(
                     Ok(recipient) => {
                         let recipient_addr = extract_address(&recipient);
                         let rcpt_domain = extract_domain(&recipient_addr);
-                        if rcpt_domain != session.domain {
+                        // Check configured domain OR verified custom domains
+                        if !session.db.is_domain_allowed(&rcpt_domain) {
                             info!(
                                 addr = %addr,
                                 recipient = %recipient_addr,
                                 rcpt_domain = %rcpt_domain,
-                                expected = %session.domain,
-                                "RCPT TO rejected — wrong domain"
+                                "RCPT TO rejected — domain not configured"
                             );
                             "550 User not local, please try <forwarding address>\r\n".to_string()
                         } else {
@@ -224,7 +229,7 @@ async fn handle_connection(
                                 headers: None,
                                 body: None,
                             };
-                            match filters::run_filters(&session.filters_dir, HookPoint::RcptTo, &ctx, session.filters_timeout_ms).await {
+                            match filters::run_filters(&session.filters_dir, HookPoint::RcptTo, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
                                 Ok(()) => {
                                     session.rcpt_to.push(recipient_addr.clone());
                                     info!(addr = %addr, recipient = %recipient_addr, "RCPT TO accepted");
@@ -278,7 +283,7 @@ async fn handle_connection(
                         headers,
                         body,
                     };
-                    if let Err(reason) = filters::run_filters(&session.filters_dir, HookPoint::Data, &ctx, session.filters_timeout_ms).await {
+                    if let Err(reason) = filters::run_filters(&session.filters_dir, HookPoint::Data, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
                         warn!(addr = %addr, reason = %reason, "Message rejected by DATA filter");
                         session.mail_from = None;
                         session.rcpt_to.clear();
@@ -386,7 +391,7 @@ async fn tls_session(
                             headers: None,
                             body: None,
                         };
-                        match filters::run_filters(&session.filters_dir, HookPoint::MailFrom, &ctx, session.filters_timeout_ms).await {
+                        match filters::run_filters(&session.filters_dir, HookPoint::MailFrom, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
                             Ok(()) => {
                                 session.mail_from = Some(sender.clone());
                                 session.rcpt_to.clear();
@@ -410,13 +415,13 @@ async fn tls_session(
                     Ok(recipient) => {
                         let recipient_addr = extract_address(&recipient);
                         let rcpt_domain = extract_domain(&recipient_addr);
-                        if rcpt_domain != session.domain {
+                        // Check configured domain OR verified custom domains
+                        if !session.db.is_domain_allowed(&rcpt_domain) {
                             info!(
                                 addr = %addr,
                                 recipient = %recipient_addr,
                                 rcpt_domain = %rcpt_domain,
-                                expected = %session.domain,
-                                "RCPT TO rejected — wrong domain"
+                                "RCPT TO rejected — domain not configured"
                             );
                             "550 User not local, please try <forwarding address>\r\n".to_string()
                         } else {
@@ -431,7 +436,7 @@ async fn tls_session(
                                 headers: None,
                                 body: None,
                             };
-                            match filters::run_filters(&session.filters_dir, HookPoint::RcptTo, &ctx, session.filters_timeout_ms).await {
+                            match filters::run_filters(&session.filters_dir, HookPoint::RcptTo, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
                                 Ok(()) => {
                                     session.rcpt_to.push(recipient_addr.clone());
                                     info!(addr = %addr, recipient = %recipient_addr, "RCPT TO accepted (TLS)");
@@ -484,7 +489,7 @@ async fn tls_session(
                         headers,
                         body,
                     };
-                    if let Err(reason) = filters::run_filters(&session.filters_dir, HookPoint::Data, &ctx, session.filters_timeout_ms).await {
+                    if let Err(reason) = filters::run_filters(&session.filters_dir, HookPoint::Data, &ctx, session.filters_timeout_ms, session.gateway_url.as_deref()).await {
                         warn!(addr = %addr, reason = %reason, "Message rejected by DATA filter (TLS)");
                         session.mail_from = None;
                         session.rcpt_to.clear();
@@ -621,26 +626,34 @@ async fn read_message_body(
 // ── Maildir Storage ──────────────────────────────────────────────
 
 async fn store_message(session: &SmtpSession, message: &[u8]) -> anyhow::Result<usize> {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let mut count = 0;
 
+    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let message_id = format!(
-        "{}.{}",
+        "{}.{:05}.{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
-            .as_secs(),
+            .as_millis(),
+        seq % 100000,
         std::process::id()
     );
 
     for recipient in &session.rcpt_to {
         let local_part = recipient.split('@').next().unwrap_or("unknown");
+        let rcpt_domain = recipient.split('@').nth(1).unwrap_or("");
+
+        // For custom domains, route to the domain owner's mailbox
+        let mailbox_user = session.db.get_mailbox_user_for_domain(rcpt_domain, recipient)
+            .unwrap_or_else(|| local_part.to_string());
 
         let user_dir = std::path::Path::new(&session.maildir_path)
             .join(&session.domain)
-            .join(local_part);
+            .join(&mailbox_user);
 
-        tokio::fs::create_dir_all(user_dir.join("cur")).await?;
-        tokio::fs::create_dir_all(user_dir.join("new")).await?;
-        tokio::fs::create_dir_all(user_dir.join("tmp")).await?;
+        for subdir in &["cur", "new", "tmp", "sent", "drafts", "archive", "spam"] {
+            tokio::fs::create_dir_all(user_dir.join(subdir)).await?;
+        }
 
         let hostname = hostname::get()
             .map(|h| h.to_string_lossy().to_string())
