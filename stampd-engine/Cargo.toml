@@ -12,6 +12,10 @@ crate-type = ["cdylib", "lib"]
 name = "stampd-engine"
 path = "src/main.rs"
 
+[features]
+default = []
+transit = ["napi", "napi-derive"]
+
 [dependencies]
 tokio.workspace = true
 serde.workspace = true
@@ -24,8 +28,8 @@ thiserror.workspace = true
 rusqlite.workspace = true
 axum.workspace = true
 hostname = "0.4"
-napi = { version = "2", features = ["async"] }
-napi-derive = "2"
+napi = { version = "2", features = ["async"], optional = true }
+napi-derive = { version = "2", optional = true }
 tokio-rustls.workspace = true
 rustls.workspace = true
 rustls-pemfile.workspace = true
@@ -36,4 +40,4 @@ reqwest.workspace = true
 argon2.workspace = true
 
 [build-dependencies]
-napi-build = "2"
+napi-build = { version = "2", optional = true }

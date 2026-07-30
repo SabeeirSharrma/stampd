@@ -19,6 +19,7 @@ pub mod spf;
 pub mod stats;
 pub mod submissiond;
 pub mod tls;
+#[cfg(feature = "transit")]
 pub mod transit;
 
 /// Global engine stats, accessible from napi exports.
