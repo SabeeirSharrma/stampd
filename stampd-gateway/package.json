@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
-    "docs:build": "bun run src/scripts/build-docs.ts"
+    "docs:build": "bun run src/scripts/build-docs.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
