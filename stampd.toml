@@ -1,8 +1,9 @@
 [engine]
 smtp_port = 25
 submission_port = 587
-maildir_path = "/var/lib/stampd/mail"
-db_path = "/var/lib/stampd/stampd.db"
+domain = "sabeeir.qd.je"
+maildir_path = "/run/media/sabeeir/Work/SabeeirSharrma/stampd/data/mail"
+db_path = "/run/media/sabeeir/Work/SabeeirSharrma/stampd/data/stampd.db"
 dkim_selector = "default"
 api_port = 8090
 
@@ -11,10 +12,10 @@ api_port = 8090
 # tls_key_path = "/etc/stampd/tls/key.pem"
 
 # DKIM key storage directory
-dkim_key_dir = "/var/lib/stampd/dkim"
+dkim_key_dir = "/run/media/sabeeir/Work/SabeeirSharrma/stampd/data/dkim"
 
 # Filter scripts directory
-filters_dir = "/var/lib/stampd/filters"
+filters_dir = "/run/media/sabeeir/Work/SabeeirSharrma/stampd/data/filters"
 filters_timeout_ms = 500
 
 # Gateway URL for Transit filter delegation (optional)

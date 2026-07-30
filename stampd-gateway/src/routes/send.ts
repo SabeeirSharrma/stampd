@@ -93,8 +93,8 @@ export default async function sendRoutes(app: FastifyInstance) {
             recipient: { type: 'string' },
           },
         },
-        400: { $ref: 'Error' },
-        401: { $ref: 'Error' },
+        400: { type: 'object', properties: { error: { type: 'string' } } },
+        401: { type: 'object', properties: { error: { type: 'string' } } },
       },
     },
   }, async (req, reply) => {

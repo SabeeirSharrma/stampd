@@ -132,7 +132,18 @@ export default async function mailboxRoutes(app: FastifyInstance) {
           properties: {
             messages: {
               type: 'array',
-              items: { $ref: 'MailboxMessage' },
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  from: { type: 'string' },
+                  to: { type: 'string' },
+                  subject: { type: 'string' },
+                  date: { type: 'string', format: 'date-time' },
+                  size: { type: 'number' },
+                  folder: { type: 'string' },
+                },
+              },
             },
             total: { type: 'number' },
           },
@@ -178,9 +189,23 @@ export default async function mailboxRoutes(app: FastifyInstance) {
         },
       },
       response: {
-        200: { $ref: 'MailboxMessageDetail' },
-        400: { $ref: 'Error' },
-        404: { $ref: 'Error' },
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            from: { type: 'string' },
+            to: { type: 'string' },
+            subject: { type: 'string' },
+            date: { type: 'string', format: 'date-time' },
+            size: { type: 'number' },
+            headers: { type: 'object', additionalProperties: { type: 'string' } },
+            body: { type: 'string' },
+            folder: { type: 'string' },
+            isDraft: { type: 'boolean' },
+          },
+        },
+        400: { type: 'object', properties: { error: { type: 'string' } } },
+        404: { type: 'object', properties: { error: { type: 'string' } } },
       },
     },
   }, async (req, reply) => {
@@ -252,8 +277,8 @@ export default async function mailboxRoutes(app: FastifyInstance) {
         },
       },
       response: {
-        200: { $ref: 'OkResponse' },
-        404: { $ref: 'Error' },
+        200: { type: 'object', properties: { ok: { type: 'boolean' } } },
+        404: { type: 'object', properties: { error: { type: 'string' } } },
       },
     },
   }, async (req, reply) => {

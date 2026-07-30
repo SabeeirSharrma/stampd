@@ -32,8 +32,8 @@ export default async function authRoutes(app: FastifyInstance) {
             is_admin: { type: 'boolean' },
           },
         },
-        403: { $ref: 'Error' },
-        409: { $ref: 'Error' },
+        403: { type: 'object', properties: { error: { type: 'string' } } },
+        409: { type: 'object', properties: { error: { type: 'string' } } },
       },
     },
   }, async (req, reply) => {
@@ -114,8 +114,8 @@ export default async function authRoutes(app: FastifyInstance) {
             is_admin: { type: 'boolean' },
           },
         },
-        401: { $ref: 'Error' },
-        403: { $ref: 'Error' },
+        401: { type: 'object', properties: { error: { type: 'string' } } },
+        403: { type: 'object', properties: { error: { type: 'string' } } },
       },
     },
   }, async (req, reply) => {
@@ -208,7 +208,7 @@ export default async function authRoutes(app: FastifyInstance) {
             token: { type: 'string', description: 'Token value (shown only once)' },
           },
         },
-        401: { $ref: 'Error' },
+        401: { type: 'object', properties: { error: { type: 'string' } } },
       },
     },
   }, async (req, reply) => {
@@ -257,7 +257,7 @@ export default async function authRoutes(app: FastifyInstance) {
             },
           },
         },
-        401: { $ref: 'Error' },
+        401: { type: 'object', properties: { error: { type: 'string' } } },
       },
     },
   }, async (req) => {
@@ -284,8 +284,8 @@ export default async function authRoutes(app: FastifyInstance) {
           type: 'object',
           properties: { ok: { type: 'boolean' } },
         },
-        401: { $ref: 'Error' },
-        404: { $ref: 'Error' },
+        401: { type: 'object', properties: { error: { type: 'string' } } },
+        404: { type: 'object', properties: { error: { type: 'string' } } },
       },
     },
   }, async (req, reply) => {
