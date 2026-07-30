@@ -11,10 +11,6 @@ dependencies = [
     "pydantic>=2.0.0",
 ]
 
-# Transit — cross-language interop (https://github.com/SabeeirSharrma/transit)
-# Python runtime is imported from node_modules/transit at runtime.
-# See transit_service.py for the Transit server setup.
-
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
@@ -23,17 +19,8 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["app"]
-
-[tool.hatch.build]
-exclude = [
-    "__pycache__",
-    "*.pyc",
-    "*.pyo",
-    ".pytest_cache",
-    "tests",
-]
+[tool.setuptools.packages.find]
+include = ["app*"]

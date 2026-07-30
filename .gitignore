@@ -43,3 +43,4 @@ Thumbs.db
 # Stampd runtime data
 /var/
 /maildir/
+stampd-admin/stampd_admin.egg-info/
